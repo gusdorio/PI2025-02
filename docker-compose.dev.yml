@@ -1,0 +1,103 @@
+# Docker Compose Configuration for DEVELOPMENT
+# Usage: docker-compose -f docker-compose.dev.yml up --build
+#
+# Development features:
+# - Volume mounts for hot-reload (code changes reflect immediately)
+# - MongoDB exposed to host for debugging (port 27017)
+# - Models folder mounted as read-only shared resource
+# - Application folders mounted for live development
+
+services:
+  # Machine Learning Model Service
+  ml-model:
+    build:
+      context: .
+      dockerfile: classes/Dockerfile
+    container_name: ml-model-dev
+    volumes:
+      # Data directory - read/write for processing
+      - ./data:/app/data
+      # Models folder - shared MongoDB connector (read-only for safety)
+      - ./models:/app/models:ro
+      # Classes folder - mounted for hot-reload during development
+      - ./classes:/app/classes
+    networks:
+      - PI2502-network
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=development
+      # Database configuration
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MONGO_DATABASE=icb_ml
+      - MONGO_USER=root
+      - MONGO_PASSWORD=root_password123
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  # Streamlit Dashboard Service
+  streamlit-dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    container_name: streamlit-dashboard-dev
+    ports:
+      - "8501:8501"  # Expose Streamlit to host
+    volumes:
+      # Data directory - read-only access
+      - ./data:/app/data:ro
+      # Models folder - shared MongoDB connector (read-only)
+      - ./models:/app/models:ro
+      # Dashboard folder - mounted for hot-reload during development
+      - ./dashboard:/app/dashboard
+    networks:
+      - PI2502-network
+    depends_on:
+      - ml-model
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=development
+      # Database configuration
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MONGO_DATABASE=icb_ml
+      - MONGO_USER=root
+      - MONGO_PASSWORD=root_password123
+
+  # MongoDB Database Service
+  mongodb:
+    image: mongo:6.0
+    container_name: icb_mongodb_dev
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root_password123
+      MONGO_INITDB_DATABASE: icb_ml
+    ports:
+      - "27017:27017"  # Exposed for local debugging/access
+    volumes:
+      - mongo_data_dev:/data/db
+      - ./migrations/init_mongo.js:/docker-entrypoint-initdb.d/01_init.js:ro
+    networks:
+      - PI2502-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+volumes:
+  mongo_data_dev:
+    driver: local
+    name: PI2502_mongo_data_dev
+
+networks:
+  PI2502-network:
+    driver: bridge
+    name: PI2502-network-dev

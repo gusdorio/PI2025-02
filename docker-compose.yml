@@ -1,0 +1,87 @@
+services:
+  # Machine Learning Model Service
+  ml-model:
+    build:
+      context: .
+      dockerfile: classes/Dockerfile
+    container_name: ml-model
+    volumes:
+      - ./data:/app/data  # Access to data (read/write for processing)
+      - ./classes:/app/classes:ro  # Read-only access to classes
+      - ./models:/app/models:ro  # Access to database models
+    networks:
+      - PI2502-network
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Database configuration (when using containers)
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MONGO_DATABASE=icb_ml
+      - MONGO_USER=root
+      - MONGO_PASSWORD=root_password123
+    # Note: To use with databases, uncomment the following:
+    # depends_on:
+    #   - mongodb
+
+  # Streamlit Dashboard Service
+  streamlit-dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    container_name: streamlit-dashboard
+    ports:
+      - "8501:8501"  # Expose Streamlit dashboard to host
+    volumes:
+      - ./data:/app/data:ro  # Read-only access to data
+      - ./models:/app/models:ro  # Access to database models
+      - ./dashboard:/app/dashboard:ro  # Mount dashboard for hot-reload during development
+    networks:
+      - PI2502-network
+    depends_on:
+      - ml-model
+      # - mongodb
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Database configuration (when using containers)
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MONGO_DATABASE=icb_ml
+      - MONGO_USER=root
+      - MONGO_PASSWORD=root_password123
+
+  mongodb:
+    image: mongo:6.0
+    container_name: icb_mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root_password123
+      MONGO_INITDB_DATABASE: icb_ml
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./migrations/init_mongo.js:/docker-entrypoint-initdb.d/01_init.js:ro
+    networks:
+      - PI2502-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+volumes:
+  mongo_data:
+    driver: local
+    name: PI2502_mongo_data
+
+networks:
+  PI2502-network:
+    driver: bridge
+
+# Note: Database services are defined in docker-compose.db.yml
+# To run the full stack with databases:
+# docker-compose -f docker-compose.db.yml -f docker-compose.yml up

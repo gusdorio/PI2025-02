@@ -1,0 +1,122 @@
+# Docker Compose Configuration for PRODUCTION
+# Usage: docker-compose -f docker-compose.prod.yml up -d
+#
+# Production features:
+# - No volume mounts (self-contained images)
+# - Models folder baked into images during build
+# - MongoDB internal only (not exposed to host)
+# - Persistent data volumes for database and results
+# - Optimized restart policies and health checks
+# - Read-only root filesystems where possible
+
+services:
+  # Machine Learning Model Service
+  ml-model:
+    build:
+      context: .
+      dockerfile: classes/Dockerfile
+    container_name: ml-model-prod
+    volumes:
+      # Only mount data directory for input/output
+      - ./data:/app/data
+      # Optionally mount results to persistent location
+      - ml_results:/app/results
+    networks:
+      - PI2502-network
+    restart: always
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=production
+      # Database configuration
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MONGO_DATABASE=icb_ml
+      - MONGO_USER=root
+      - MONGO_PASSWORD=root_password123
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Streamlit Dashboard Service
+  streamlit-dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    container_name: streamlit-dashboard-prod
+    ports:
+      - "8501:8501"  # Expose only Streamlit to host
+    volumes:
+      # Read-only access to data
+      - ./data:/app/data:ro
+    networks:
+      - PI2502-network
+    depends_on:
+      - ml-model
+      mongodb:
+        condition: service_healthy
+    restart: always
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=production
+      # Database configuration
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MONGO_DATABASE=icb_ml
+      - MONGO_USER=root
+      - MONGO_PASSWORD=root_password123
+    healthcheck:
+      test: curl --fail http://localhost:8501/_stcore/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # MongoDB Database Service
+  mongodb:
+    image: mongo:6.0
+    container_name: icb_mongodb_prod
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root_password123
+      MONGO_INITDB_DATABASE: icb_ml
+    # Note: No ports exposed to host in production (internal network only)
+    volumes:
+      - mongo_data_prod:/data/db
+      - ./migrations/init_mongo.js:/docker-entrypoint-initdb.d/01_init.js:ro
+    networks:
+      - PI2502-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  mongo_data_prod:
+    driver: local
+    name: PI2502_mongo_data_prod
+  ml_results:
+    driver: local
+    name: PI2502_ml_results
+
+networks:
+  PI2502-network:
+    driver: bridge
+    name: PI2502-network-prod
