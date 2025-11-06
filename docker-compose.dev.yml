@@ -12,7 +12,8 @@ services:
   ml-model:
     build:
       context: .
-      dockerfile: classes/Dockerfile
+      dockerfile: Dockerfile
+      target: ml-model
     container_name: ml-model-dev
     volumes:
       # Data directory - read/write for processing
@@ -41,7 +42,8 @@ services:
   streamlit-dashboard:
     build:
       context: .
-      dockerfile: dashboard/Dockerfile
+      dockerfile: Dockerfile
+      target: dashboard
     container_name: streamlit-dashboard-dev
     ports:
       - "8501:8501"  # Expose Streamlit to host
@@ -55,7 +57,8 @@ services:
     networks:
       - PI2502-network
     depends_on:
-      - ml-model
+      ml-model:
+        condition: service_started
       mongodb:
         condition: service_healthy
     restart: unless-stopped

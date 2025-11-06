@@ -14,7 +14,8 @@ services:
   ml-model:
     build:
       context: .
-      dockerfile: classes/Dockerfile
+      dockerfile: Dockerfile
+      target: ml-model
     container_name: ml-model-prod
     volumes:
       # Only mount data directory for input/output
@@ -46,7 +47,8 @@ services:
   streamlit-dashboard:
     build:
       context: .
-      dockerfile: dashboard/Dockerfile
+      dockerfile: Dockerfile
+      target: dashboard
     container_name: streamlit-dashboard-prod
     ports:
       - "8501:8501"  # Expose only Streamlit to host
@@ -56,7 +58,8 @@ services:
     networks:
       - PI2502-network
     depends_on:
-      - ml-model
+      ml-model:
+        condition: service_started
       mongodb:
         condition: service_healthy
     restart: always
