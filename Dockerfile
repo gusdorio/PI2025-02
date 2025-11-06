@@ -20,7 +20,7 @@
 # This stage contains all common dependencies and setup shared by all services.
 # By keeping this as a separate stage, Docker can cache and reuse these layers.
 
-FROM python:3.9-slim AS base
+FROM python:3.11-slim AS base
 
 # Copy uv package manager from official image (ultra-fast Python package installer)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
