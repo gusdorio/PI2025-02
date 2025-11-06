@@ -100,7 +100,7 @@ dev-shell-dashboard: ## Open shell in dashboard container
 	docker-compose -f $(DEV_COMPOSE) exec streamlit-dashboard /bin/bash
 
 dev-shell-db: ## Open MongoDB shell
-	docker-compose -f $(DEV_COMPOSE) exec mongodb mongosh -u root -p root_password123 icb_ml
+	docker-compose -f $(DEV_COMPOSE) exec mongodb mongosh -u root -p root_password123 pi2502
 
 
 # ============================================================================
@@ -157,7 +157,7 @@ prod-shell-dashboard: ## Open shell in dashboard container
 	docker-compose -f $(PROD_COMPOSE) exec streamlit-dashboard /bin/bash
 
 prod-shell-db: ## Open MongoDB shell
-	docker-compose -f $(PROD_COMPOSE) exec mongodb mongosh -u root -p root_password123 icb_ml
+	docker-compose -f $(PROD_COMPOSE) exec mongodb mongosh -u root -p root_password123 pi2502
 
 
 # ============================================================================
@@ -190,7 +190,7 @@ validate-all: validate-dev validate-prod ## Validate all compose files
 
 images: ## List all project images
 	@echo "$(BLUE)Project images:$(RESET)"
-	@docker images | grep -E "(pi2025-02|icb)" || echo "No images found"
+	@docker images | grep -E "pi2025-02" || echo "No images found"
 
 volumes: ## List all project volumes
 	@echo "$(BLUE)Project volumes:$(RESET)"

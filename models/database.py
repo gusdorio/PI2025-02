@@ -25,7 +25,7 @@ class DatabaseConfig:
     # MongoDB Configuration
     MONGO_HOST = os.getenv('MONGO_HOST', 'localhost')
     MONGO_PORT = int(os.getenv('MONGO_PORT', 27017))
-    MONGO_DATABASE = os.getenv('MONGO_DATABASE', 'icb_ml')
+    MONGO_DATABASE = os.getenv('MONGO_DATABASE', 'pi2502')
     MONGO_USER = os.getenv('MONGO_USER', '')
     MONGO_PASSWORD = os.getenv('MONGO_PASSWORD', '')
 
