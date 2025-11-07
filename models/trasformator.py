@@ -6,6 +6,16 @@ from sklearn.decomposition import PCA
 import umap
 from typing import Literal, List, Optional
 
+# Import the simple dataset handler from separate file (same directory)
+# This allows dashboard to use UploadedDataset without importing polars
+try:
+    from .dataset import UploadedDataset
+except ImportError:
+    from dataset import UploadedDataset
+
+# ============================================================================
+# COMPLEX DATA TRANSFORMATION PIPELINE (Step 2+)
+# ============================================================================
 class data_transformation:
     """
     Classe para encapsular um pipeline de transformação de dados usando Polars
