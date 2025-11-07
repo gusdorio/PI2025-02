@@ -1,13 +1,17 @@
-# Docker Compose Configuration for PRODUCTION
+# Docker Compose Configuration for PRODUCTION (Azure Container Apps Ready)
 # Usage: docker-compose -f docker-compose.prod.yml up -d
 #
-# Production features:
+# Azure Container Apps features:
 # - No volume mounts (self-contained images)
 # - Models folder baked into images during build
-# - MongoDB internal only (not exposed to host)
-# - Persistent data volumes for database and results
+# - External database (Azure CosmosDB via MongoDB API)
+# - No local MongoDB service (use managed CosmosDB)
 # - Optimized restart policies and health checks
-# - Read-only root filesystems where possible
+# - Each service will be deployed as separate Azure Container App
+#
+# NOTE: Azure Container Apps don't use docker-compose directly.
+# This file serves as a reference for local testing before Azure deployment.
+# For Azure deployment, use Azure CLI or Portal to create container apps.
 
 services:
   # Machine Learning Model Service
@@ -17,26 +21,23 @@ services:
       dockerfile: Dockerfile
       target: ml-model
     container_name: ml-model-prod
-    volumes:
-      # Only mount data directory for input/output
-      - ./data:/app/data
-      # Optionally mount results to persistent location
-      - ml_results:/app/results
+    # No volumes - fully self-contained image
     networks:
       - PI2502-network
     restart: always
     environment:
       - PYTHONUNBUFFERED=1
       - ENVIRONMENT=production
-      # Database configuration
-      - MONGO_HOST=mongodb
-      - MONGO_PORT=27017
-      - MONGO_DATABASE=pi2502
-      - MONGO_USER=root
-      - MONGO_PASSWORD=root_password123
-    depends_on:
-      mongodb:
-        condition: service_healthy
+      # Database configuration - Update these for Azure CosmosDB
+      # Format: <account-name>.mongo.cosmos.azure.com
+      - MONGO_HOST=${COSMOSDB_HOST:-localhost}
+      - MONGO_PORT=${COSMOSDB_PORT:-10255}
+      - MONGO_DATABASE=${COSMOSDB_DATABASE:-pi2502}
+      - MONGO_USER=${COSMOSDB_USER:-}
+      - MONGO_PASSWORD=${COSMOSDB_PASSWORD:-}
+      # Azure CosmosDB requires TLS/SSL
+      - MONGO_TLS=${MONGO_TLS:-true}
+      - MONGO_AUTH_SOURCE=${MONGO_AUTH_SOURCE:-admin}
     logging:
       driver: "json-file"
       options:
@@ -51,25 +52,24 @@ services:
       target: dashboard
     container_name: streamlit-dashboard-prod
     ports:
-      - "8501:8501"  # Expose only Streamlit to host
-    volumes:
-      # Read-only access to data
-      - ./data:/app/data:ro
+      - "8501:8501"
+    # No volumes - fully self-contained image
     networks:
       - PI2502-network
-    depends_on:
-      mongodb:
-        condition: service_healthy
     restart: always
     environment:
       - PYTHONUNBUFFERED=1
       - ENVIRONMENT=production
-      # Database configuration
-      - MONGO_HOST=mongodb
-      - MONGO_PORT=27017
-      - MONGO_DATABASE=pi2502
-      - MONGO_USER=root
-      - MONGO_PASSWORD=root_password123
+      # Database configuration - Update these for Azure CosmosDB
+      # Format: <account-name>.mongo.cosmos.azure.com
+      - MONGO_HOST=${COSMOSDB_HOST:-localhost}
+      - MONGO_PORT=${COSMOSDB_PORT:-10255}
+      - MONGO_DATABASE=${COSMOSDB_DATABASE:-pi2502}
+      - MONGO_USER=${COSMOSDB_USER:-}
+      - MONGO_PASSWORD=${COSMOSDB_PASSWORD:-}
+      # Azure CosmosDB requires TLS/SSL
+      - MONGO_TLS=${MONGO_TLS:-true}
+      - MONGO_AUTH_SOURCE=${MONGO_AUTH_SOURCE:-admin}
     healthcheck:
       test: curl --fail http://localhost:8501/_stcore/health || exit 1
       interval: 30s
@@ -82,40 +82,8 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # MongoDB Database Service
-  mongodb:
-    image: mongo:latest
-    container_name: mongodb_prod
-    restart: always
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: root_password123
-      MONGO_INITDB_DATABASE: pi2502
-    # Note: No ports exposed to host in production (internal network only)
-    volumes:
-      - mongo_data_prod:/data/db
-      - ./migrations/init_mongo.js:/docker-entrypoint-initdb.d/01_init.js:ro
-    networks:
-      - PI2502-network
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-volumes:
-  mongo_data_prod:
-    driver: local
-    name: PI2502_mongo_data_prod
-  ml_results:
-    driver: local
-    name: PI2502_ml_results
+# No volumes needed for Azure Container Apps
+# All data is stored in Azure CosmosDB
 
 networks:
   PI2502-network:
