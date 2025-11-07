@@ -15,7 +15,7 @@ class data_transformation():
     def min_max_normalization():
         pass
 
-    def Normalization():
+    def normalization():
         pass
     
     def outlier_treatment():
