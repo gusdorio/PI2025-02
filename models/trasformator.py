@@ -1,23 +1,25 @@
 # Imports
+import polars as pl
+import numpy as np
 
 class data_transformation():
     '''
     
     '''
     def __init__(self, raw_data, normalization_type, compactation):
-        self.raw_data = raw_data
+        self.data = raw_data
         self.normalization_type = normalization_type
         self.compactation = compactation
 
-    def z_score_normalization():
+    def z_score_normalization(self, data):
         pass
 
-    def min_max_normalization():
+    def min_max_normalization(self, data):
         pass
 
     def normalization():
         pass
-    
+
     def outlier_treatment():
         pass
 
@@ -28,4 +30,7 @@ class data_transformation():
         pass
 
     def compactation():
+        pass
+
+    def descompactation():
         pass

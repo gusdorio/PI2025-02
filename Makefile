@@ -31,7 +31,7 @@ PROD_COMPOSE := docker-compose.prod.yml
 help: ## Show this help message
 	@echo ""
 	@echo "$(BLUE)╔══════════════════════════════════════════════════════════╗$(RESET)"
-	@echo "$(BLUE)║  ML Operations Docker Environment - Available Commands  ║$(RESET)"
+	@echo "$(BLUE)║  ML Operations Docker Environment - Available Commands   ║$(RESET)"
 	@echo "$(BLUE)╚══════════════════════════════════════════════════════════╝$(RESET)"
 	@echo ""
 	@echo "$(YELLOW)Development Commands:$(RESET)"
