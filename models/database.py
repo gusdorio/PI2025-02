@@ -103,3 +103,27 @@ class MongoDBConnection:
         if self._client:
             self._client.close()
             logger.info("MongoDB connection closed")
+
+
+class AzureCosmosDBConnection(MongoDBConnection):
+    """
+    Azure Cosmos DB connection manager extending MongoDBConnection
+    # TODO: Test and validate with Azure Connection
+    """
+    def _initialize(self):
+        """Initialize Azure Cosmos DB connection"""
+        try:
+            # Create PyMongo client for Azure Cosmos DB
+            self._client = MongoClient(
+                DatabaseConfig.get_mongo_url(),
+                maxPoolSize=DatabaseConfig.POOL_SIZE,
+                serverSelectionTimeoutMS=5000,
+                tls=True,
+                tlsAllowInvalidCertificates=False
+            )
+            self._db = self._client[DatabaseConfig.MONGO_DATABASE]
+
+            logger.info("Azure Cosmos DB connection initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Azure Cosmos DB connection: {e}")
+            raise
