@@ -54,18 +54,18 @@ COPY models/ ./models/
 FROM base AS ml-model
 
 # Copy and install ML service dependencies
-COPY classes/requirements.txt .
+COPY ml_model/requirements.txt .
 RUN uv pip install --no-cache -r requirements.txt
 
 # Copy application code
-COPY classes/ ./classes/
+COPY ml_model/ ./ml_model/
 
 # Expose port for API (if needed)
 EXPOSE 5000
 
 # Run the ML pipeline
 # Note: Adjust the entrypoint based on your actual main file location
-CMD ["python", "-m", "classes.main"]
+CMD ["python", "-m", "ml_model.main"]
 
 
 # ============================================

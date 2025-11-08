@@ -20,8 +20,8 @@ services:
       - ./data:/app/data
       # Models folder - shared MongoDB connector (read-only for safety)
       - ./models:/app/models:ro
-      # Classes folder - mounted for hot-reload during development
-      - ./classes:/app/classes
+      # ml_model folder - mounted for hot-reload during development
+      - ./ml_model:/app/ml_model
     networks:
       - PI2502-network
     restart: unless-stopped

@@ -3,11 +3,10 @@ services:
   ml-model:
     build:
       context: .
-      dockerfile: classes/Dockerfile
+      dockerfile: ml_model/Dockerfile
     container_name: ml-model
     volumes:
-      - ./data:/app/data  # Access to data (read/write for processing)
-      - ./classes:/app/classes:ro  # Read-only access to classes
+      - ./ml_model:/app/ml_model:ro  # Read-only access to ml_model
       - ./models:/app/models:ro  # Access to database models
     networks:
       - PI2502-network
@@ -33,7 +32,6 @@ services:
     ports:
       - "8501:8501"  # Expose Streamlit dashboard to host
     volumes:
-      - ./data:/app/data:ro  # Read-only access to data
       - ./models:/app/models:ro  # Access to database models
       - ./dashboard:/app/dashboard:ro  # Mount dashboard for hot-reload during development
     networks:
