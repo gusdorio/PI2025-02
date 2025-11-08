@@ -9,11 +9,11 @@ dashboard/
 ├── dashboard.py          # Main entry point (homepage with DB status)
 ├── config.py            # DB connection and configuration
 ├── pages/               # Auto-discovered Streamlit pages
-│   ├── upload.py       # Data upload interface
+│   ├── upload.py       # Data upload and ML service communication
 │   └── results.py      # Results viewer
-├── components/          # Custom components (future)
-│   ├── uploader.py     # File upload handler
-│   └── ml_client.py    # ML service client
+├── components/          # Service components
+│   ├── uploader.py     # File upload handler and validation
+│   └── ml_client.py    # ML service HTTP client
 └── .streamlit/          # Streamlit configuration
 ```
 
@@ -50,19 +50,53 @@ count = collection.count_documents({})
 collection.update_one({'_id': doc_id}, {'$set': {'status': 'processed'}})
 ```
 
+## ML Service Communication
+
+The dashboard communicates with the ML model service via HTTP.
+
+### ml_client.py
+
+Sends datasets to the ML service for processing.
+
+```python
+from components.ml_client import send_dataset_to_ml
+
+# Send dataset to ML service
+response = send_dataset_to_ml(dataset)
+
+# Response structure
+{
+    "status": "received",
+    "message": "Dataset received successfully",
+    "timestamp": "2024-01-15T10:30:00",
+    "row_count": 1000,
+    "column_count": 15,
+    "filename": "data.xlsx"
+}
+```
+
+**Key Features:**
+- Automatic numpy type conversion for JSON serialization
+- Comprehensive error handling (connection, timeout, HTTP errors)
+- Detailed logging for debugging
+- 60-second timeout for large datasets
+
 ## Pages Extension
 
 This section guides about how the pages logic works and how to extend functionality.
 
 ### upload.py
-Upload file → Validate → Send to ML → Store metadata
+Upload file → Validate → Send to ML → Display response
 
 ```python
-from components.uploader import validate_file
-from components.ml_client import send_to_ml_service
+from components.uploader import UploadService
+from components.ml_client import send_dataset_to_ml
 
-is_valid, errors = validate_file(uploaded_file)
-job_id = send_to_ml_service(file_path, metadata)
+# Validate uploaded file
+dataset, errors = upload_service.process_upload(uploaded_file)
+
+# Send to ML service
+ml_response = send_dataset_to_ml(dataset)
 ```
 
 ### results.py

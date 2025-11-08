@@ -37,6 +37,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from components.uploader import UploadService
 
+# Import ML client
+try:
+    from components.ml_client import send_dataset_to_ml
+except ImportError as e:
+    print(f"[ERROR] Failed to import ML client: {str(e)}")
+    send_dataset_to_ml = None
+
 
 # ============================================================================
 # PAGE CONFIGURATION
@@ -47,6 +54,31 @@ st.set_page_config(
     page_icon=":arrow_up:",
     layout="wide"
 )
+
+# ============================================================================
+# SIDEBAR - ML SERVICE STATUS
+# ============================================================================
+
+with st.sidebar:
+    st.markdown("### 🔧 Service Status")
+
+    # Test ML service connection
+    try:
+        import requests
+        response = requests.get("http://ml-model:5000", timeout=2)
+        # Any response (even 404) means server is running
+        st.success("✅ ML Service: Online")
+    except requests.ConnectionError:
+        st.error("❌ ML Service: Offline")
+        st.caption("Start with: `make dev-up`")
+    except requests.Timeout:
+        st.warning("⚠️ ML Service: Slow Response")
+    except:
+        st.info("ℹ️ ML Service: Unknown")
+
+    st.markdown("---")
+    st.caption("**Logs:** `make dev-logs-ml`")
+    st.caption("**Status:** `make dev-status`")
 
 
 # ============================================================================
@@ -106,11 +138,51 @@ if uploaded_file is not None:
             st.success(f"✅ File validated successfully: **{uploaded_file.name}**")
 
             # ================================================================
+            # ML SERVICE COMMUNICATION
+            # ================================================================
+
+            st.markdown("---")
+            st.subheader("3. ML Service Processing")
+
+            # Send dataset to ML service
+            if send_dataset_to_ml is None:
+                st.error("❌ ML client not available - import failed at startup")
+                ml_response = None
+            else:
+                with st.spinner("Sending dataset to ML service..."):
+                    ml_response = send_dataset_to_ml(dataset)
+
+            if ml_response:
+                # Successfully sent to ML service
+                st.success(f"✅ **{ml_response.get('message', 'Processing initiated')}**")
+
+                # Display response details
+                col_ml1, col_ml2, col_ml3 = st.columns(3)
+
+                with col_ml1:
+                    st.metric("Status", ml_response.get('status', 'unknown').upper())
+
+                with col_ml2:
+                    st.metric("Rows Processed", f"{ml_response.get('row_count', 0):,}")
+
+                with col_ml3:
+                    st.metric("Columns Processed", ml_response.get('column_count', 0))
+
+                # Show full response in expander
+                with st.expander("📋 View Full ML Service Response"):
+                    st.json(ml_response)
+
+            else:
+                # Failed to send to ML service
+                st.warning("⚠️ Could not send dataset to ML service")
+                st.info("The dataset has been validated locally. You can still preview and export it below.")
+
+            # ================================================================
             # DATASET SUMMARY
             # ================================================================
 
             st.markdown("---")
-            st.subheader("3. Dataset Summary")
+            st.subheader("4. Dataset Summary")
 
             summary = dataset.get_summary()
 
@@ -143,7 +215,7 @@ if uploaded_file is not None:
             # ================================================================
 
             st.markdown("---")
-            st.subheader("4. Dataset Details")
+            st.subheader("5. Dataset Details")
 
             tab1, tab2, tab3, tab4 = st.tabs([
                 "📊 Data Preview",
@@ -296,7 +368,7 @@ if uploaded_file is not None:
             # ================================================================
 
             st.markdown("---")
-            st.subheader("5. Processing Status")
+            st.subheader("6. Processing Status")
 
             col_status1, col_status2 = st.columns([2, 1])
 
@@ -348,13 +420,14 @@ else:
     ### How to use:
     1. Click the **Browse files** button above
     2. Select a CSV or Excel file (max 50MB)
-    3. Wait for validation and preview
-    4. Review the dataset summary and preview
-    5. Use the tabs to explore your data in detail
-    6. Proceed to next steps (coming in Step 2)
+    3. Wait for validation and ML service processing
+    4. Review the ML service response
+    5. Explore your data in the detailed tabs below
+    6. Export or proceed to next steps
 
     ### What you'll see:
     - **Validation Status:** Confirms your file passed all checks
+    - **ML Service Processing:** Automatic transmission to ML model service
     - **Dataset Summary:** Key metrics about your data
     - **Data Preview Tab:** View up to 100 rows with a slider
     - **Column Info Tab:** Details about each column
