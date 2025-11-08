@@ -4,23 +4,51 @@ Este é um Projeto Integrador relativo ao Segundo Semestre 2025, da Escola Polit
 
 # Project Structure
 
-This repository is separated into a two side microsservice applications, with one side responsible for user operations and the another for back-end operations. Details below.
+This repository is organized into two microservice applications: one for user-facing operations and another for back-end processing. Details below.
 
-## Microsservice 1 (dashboard app)
-'dashboard/' works as a user interactive web application, where the user is able to:
 
-- upload data files (which are passed to our another one service);
-- verify results from data imports after data processing operations executed by the another service.
+## Microservice 1 (dashboard app)
+`dashboard/` is a user-interactive web application where users can:
 
-The data operations occurs essentially by adopting a client interface, which passes the data via http POST requests to the another microsservice in a pre-defined route; and by accesing a mongodb connection, to pull results from what is done in the another microsservice data operation tasks.
+- Upload data files (which are sent to the ML microservice);
+- View results from data processing operations executed by the ML microservice.
 
-## Microsservice 2 (machine learning model app)
-'ml_model' works as an application responsible, in essence, to execute an machine learning algorithm to mine results from data files imported at the dashboard microsservice side. This process happens by:
+Data operations occur through a client interface that sends data via HTTP POST requests to the ML microservice, and by accessing a MongoDB connection to retrieve processing results.
 
-- a simple http server is started at the main entry; it listens for post calls from dashboard side, expecting to receive a special data object crafted from 'models' folder;
-- special data operations are called to verify the data, transform it, and then passes to the most important step, which is to do the computations related to the machine learning algorithm itself;
-- at the end of the algorithm execution, the results are stored at the mongodb connection.
+
+## Microservice 2 (machine learning model app)
+`ml_model/` is responsible for executing machine learning algorithms on data files uploaded through the dashboard. The process works as follows:
+
+- A simple HTTP server listens for POST requests from the dashboard, expecting to receive a data object defined in the `models/` folder;
+- Data operations verify, transform, and prepare the data before running the machine learning algorithm;
+- After execution, results are stored in MongoDB.
 
 
 ## Special Considerations
-The 'models/' folder is intended to serve the two sides of microsservice applications, in order to deliver the necessary resources which makes the services able to stablish the connection with the database used in this project (MongoDB). It also have some common operations related to data transformation operations which receive transformations in the dashboard service side and are re-transformed to original again at the ml_model service side.
+The `models/` folder serves both microservices, providing shared resources for:
+- Database connection utilities (MongoDB);
+- Common data transformation operations (data is transformed in the dashboard service and re-transformed in the ml_model service).
+
+
+## Project Pipeline
+The following diagram illustrates the end-user workflow:
+
+```mermaid
+flowchart TD
+    A[User accesses Dashboard] --> B[Navigate to Upload Section]
+    B --> C[Upload Data File]
+    C --> D[Dashboard Client<br/>dashboard/components/ml_client.py]
+    D -->|HTTP POST| E[ML Model Server<br/>ml_model/components/server.py]
+    E --> F[Data Validation & Transformation]
+    F --> G[Machine Learning Algorithm Execution]
+    G --> H[Store Results in MongoDB]
+    H --> I[User navigates to Results Section]
+    I --> J[Dashboard retrieves results from MongoDB]
+    J --> K[User views processed results]
+
+    style A fill:#e1f5ff
+    style C fill:#e1f5ff
+    style G fill:#fff4e1
+    style H fill:#ffe1f5
+    style K fill:#e1f5ff
+```
