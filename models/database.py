@@ -42,7 +42,8 @@ class DatabaseConfig:
     def get_mongo_url(cls) -> str:
         """Generate standard MongoDB connection URL"""
         if cls.MONGO_USER and cls.MONGO_PASSWORD:
-            return f"mongodb://{cls.MONGO_USER}:{cls.MONGO_PASSWORD}@{cls.MONGO_HOST}:{cls.MONGO_PORT}/{cls.MONGO_DATABASE}"
+            # Include authSource parameter for proper authentication
+            return f"mongodb://{cls.MONGO_USER}:{cls.MONGO_PASSWORD}@{cls.MONGO_HOST}:{cls.MONGO_PORT}/{cls.MONGO_DATABASE}?authSource={cls.MONGO_AUTH_SOURCE}"
         return f"mongodb://{cls.MONGO_HOST}:{cls.MONGO_PORT}/{cls.MONGO_DATABASE}"
 
     @classmethod

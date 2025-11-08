@@ -10,27 +10,34 @@ ml_model/
 ├── requirements.txt     # Python dependencies
 └── components/          # Core components
     ├── server.py        # HTTP server for receiving requests
-    ├── analyses_ml.py   # ML algorithms and model selection
-    └── data_processor.py # Data transformation pipeline
+    ├── data_processor.py # Pipeline orchestrator and data storage
+    └── analyses_ml.py   # ML algorithms and model selection
 ```
 
 ## Overview
 
-The ML service is a standalone HTTP server that receives datasets from the dashboard, processes them through machine learning pipelines, and returns results.
+The ML service is a standalone HTTP server that receives datasets from the dashboard, processes them through a structured pipeline, and stores results in MongoDB.
 
-**Current Implementation:**
+**Architecture:**
+```
+HTTP Request → Server → DataPipeline → [Validation → ML Processing → MongoDB Storage]
+```
+
+**Implementation Status:**
 - [x] HTTP server with health checks and data endpoints
-- [x] Dataset validation and parsing
-- [x] Detailed logging for debugging
-- [] Database storage (planned)
-- [] ML processing integration (planned)
-- [] Queue process manager for user tracking (planned)
+- [x] Pipeline orchestration with stage-by-stage execution
+- [x] Data validation and structure verification
+- [x] MongoDB integration for datasets and pipeline runs
+- [x] Automatic numpy type conversion for database compatibility
+- [x] Comprehensive error handling and logging
+- [x] Standardized response format
+- [ ] ML processing (AutoMLSelector ready, not yet integrated)
 
 ## HTTP Server
 
 ### server.py
 
-Minimal HTTP server using Python's built-in `http.server` module.
+Minimal HTTP server using Python's built-in `http.server` module. Delegates all processing to the DataPipeline.
 
 **Endpoints:**
 
@@ -41,7 +48,7 @@ GET /
   Response: {"status": "healthy", "service": "ml-model", ...}
 
 POST /process
-  Accepts dataset for ML processing
+  Accepts dataset for processing through the pipeline
   Request body: {
     "filename": str,
     "data": str (JSON-encoded DataFrame),
@@ -49,22 +56,28 @@ POST /process
       "row_count": int,
       "column_count": int,
       "column_names": list,
-      ...
+      "file_type": str,
+      "has_missing_values": bool
     }
   }
   Response: {
-    "status": "received",
-    "message": "Dataset received successfully",
+    "status": "completed",
+    "message": "Dataset processed and stored successfully",
     "timestamp": ISO datetime,
+    "batch_id": str,
     "row_count": int,
     "column_count": int,
-    "filename": str
+    "filename": str,
+    "storage_location": "mongodb://datasets",
+    "ml_processing": {...},
+    "processing_summary": {...}
   }
 ```
 
 **Key Features:**
+- Delegates all validation and processing to DataPipeline
 - Comprehensive request/response logging with visual indicators
-- JSON validation and error handling
+- JSON parsing and error handling
 - Support for large payloads (tested up to 50MB)
 - No external framework dependencies
 
@@ -79,11 +92,90 @@ start_server()
 start_server(host='0.0.0.0', port=8080)
 ```
 
+## Data Processing Pipeline
+
+### data_processor.py
+
+Pipeline orchestrator that coordinates all processing stages with clear separation of concerns.
+
+**Architecture:**
+```
+DataPipeline
+├── DataValidator     # Stage 1: Validate incoming data
+├── MLProcessor       # Stage 2: Machine learning processing
+└── DataStorage       # Stage 3: MongoDB persistence
+```
+
+**DataPipeline Class:**
+
+Orchestrates the complete data flow from receipt to storage.
+
+```python
+from ml_model.components.data_processor import DataPipeline, ProcessingMode
+
+# Initialize pipeline
+pipeline = DataPipeline(mode=ProcessingMode.MINIMAL)
+
+# Execute pipeline
+result = pipeline.execute(data)
+
+# Result is a PipelineResult object with:
+# - status: "completed" or "failed"
+# - message: Human-readable message
+# - batch_id: Unique identifier for this run
+# - data: Processing results and metadata
+# - errors: List of errors if failed
+```
+
+**Processing Modes:**
+- `MINIMAL`: Validate and store only (current default)
+- `ANALYSIS`: Basic statistical analysis
+- `FULL_ML`: Complete ML pipeline with AutoMLSelector
+
+**DataValidator:**
+
+Validates incoming data structure and content.
+
+- Checks required fields (filename, data, metadata)
+- Validates metadata structure
+- Enforces size limits (1M rows, 1K columns max)
+- Parses JSON to pandas DataFrame
+- Creates UploadedDataset objects
+
+**MLProcessor:**
+
+Machine learning processing stage (placeholder for AutoMLSelector integration).
+
+Currently operates in MINIMAL mode (skips ML processing). The AutoMLSelector component is ready for integration when needed.
+
+**DataStorage:**
+
+Handles all MongoDB operations.
+
+```python
+# Collections managed:
+- datasets            # Raw uploaded datasets
+- pipeline_runs       # Pipeline execution tracking
+- ml_results          # ML processing results (reserved)
+
+# Storage operations:
+storage.store_dataset(dataset, batch_id)      # Stores dataset
+storage.store_pipeline_run(batch_id, status, summary)  # Tracks execution
+storage.get_dataset(batch_id)                 # Retrieves dataset
+```
+
+**Key Features:**
+- Automatic conversion of numpy types to native Python types
+- Stage-by-stage error handling
+- Unique batch ID generation
+- Pipeline run tracking for observability
+- Standardized result objects
+
 ## ML Components
 
 ### analyses_ml.py
 
-Automated ML model selection and training.
+Automated ML model selection and training component (ready for integration).
 
 **AutoMLSelector Class:**
 
@@ -110,63 +202,131 @@ predictions = selector.predict(X_test)
 - Auto-detection of problem type (regression vs classification)
 - 8 regression algorithms (Linear, Ridge, Lasso, Random Forest, Gradient Boosting, etc.)
 - 6 classification algorithms (Logistic, Random Forest, SVC, Decision Tree, etc.)
-- K-Fold cross-validation
+- K-Fold cross-validation (5 folds default)
 - Comprehensive metrics (R², MAE, accuracy, F1-score, etc.)
 - Overfitting detection
+- Error range calculation for predictions
 
-### data_processor.py
+## MongoDB Integration
 
-Data transformation pipeline (planned).
+The service stores data in MongoDB with the following schema:
 
-**Planned Features:**
-- Feature engineering
-- Missing value handling
-- Categorical encoding
-- Feature scaling
-- Data splitting
+**datasets Collection:**
+```javascript
+{
+  _id: "20251108_193036_filename_csv_hash",  // batch_id
+  filename: "data.csv",
+  file_type: "csv",
+  upload_timestamp: ISODate("2025-11-08T19:30:36Z"),
+  metadata: {
+    row_count: 1000,
+    column_count: 15,
+    column_names: ["col1", "col2", ...],
+    has_missing_values: false,
+    // ... additional metadata
+  },
+  data: [
+    {col1: value1, col2: value2, ...},
+    // ... all rows
+  ],
+  created_at: ISODate("2025-11-08T19:30:36Z"),
+  processing_status: "stored"
+}
+```
+
+**pipeline_runs Collection:**
+```javascript
+{
+  batch_id: "20251108_193036_filename_csv_hash",
+  status: "completed",  // or "failed"
+  started_at: ISODate("2025-11-08T19:30:36Z"),
+  completed_at: ISODate("2025-11-08T19:30:37Z"),
+  summary: {
+    filename: "data.csv",
+    rows_processed: 1000,
+    columns_processed: 15,
+    has_missing_values: false,
+    ml_status: "skipped",
+    processing_mode: "minimal",
+    storage_status: "success"
+  },
+  errors: [],  // Array of error objects if failed
+  metadata: {
+    processor_version: "1.0.0",
+    storage_version: "1.0.0"
+  }
+}
+```
+
+**Connection Configuration:**
+
+Environment variables (set in docker-compose.dev.yml):
+```bash
+MONGO_HOST=mongodb
+MONGO_PORT=27017
+MONGO_DATABASE=pi2502
+MONGO_USER=root
+MONGO_PASSWORD=root_password123
+MONGO_AUTH_SOURCE=admin
+```
 
 ## Development Guide
 
+### Current Data Flow
 
-### Integrating ML Processing
-
-Current flow (minimal):
 ```
-Receive data → Validate → Log → Return acknowledgment
+1. Dashboard sends POST /process with dataset
+2. Server parses JSON and logs request
+3. Server delegates to DataPipeline
+4. DataPipeline executes stages:
+   a. DataValidator validates structure
+   b. MLProcessor runs (currently skips in MINIMAL mode)
+   c. DataStorage stores in MongoDB
+   d. Pipeline run recorded for tracking
+5. Server returns standardized result to dashboard
 ```
 
-Future flow (to implement):
-```
-Receive data → Validate → Process with AutoMLSelector → Store results → Return results
-```
+### Adding ML Processing
 
-**Integration Steps:**
-1. In `server.py`, modify `_process_dataset()` method
-2. Convert JSON data back to pandas DataFrame
-3. Call `AutoMLSelector` with target column
-4. Store results in MongoDB
-5. Return processing results
+To enable ML processing in the pipeline:
 
-Example:
+1. Change processing mode from MINIMAL to FULL_ML:
 ```python
-def _process_dataset(self, data):
-    import pandas as pd
-    from ml_model.components.analyses_ml import AutoMLSelector
-
-    # Convert JSON to DataFrame
-    df = pd.read_json(data['data'])
-
-    # Process with ML
-    selector = AutoMLSelector(target_column='target')
-    selector.fit(df)
-    results = selector.get_results_summary()
-
-    return {
-        "status": "completed",
-        "results": results,
-        "timestamp": datetime.now().isoformat()
-    }
+# In server.py, line 195
+pipeline = DataPipeline(mode=ProcessingMode.FULL_ML)
 ```
+
+2. Update MLProcessor.process() in data_processor.py:
+```python
+def process(self, dataset: UploadedDataset, batch_id: str) -> Dict:
+    if self.mode == ProcessingMode.FULL_ML:
+        from ml_model.components.analyses_ml import AutoMLSelector
+
+        # Run AutoML
+        selector = AutoMLSelector(target_column='target_col')
+        selector.fit(dataset.raw_dataframe)
+        results = selector.get_results_summary()
+
+        # Store results in ml_results collection
+        # Return results
+        return {
+            "ml_status": "completed",
+            "best_model": selector.best_model_name,
+            "results": results.to_dict()
+        }
+```
+
+3. Specify target column (could be from request metadata)
+
+### Extending the Pipeline
+
+To add new processing stages:
+
+1. Create new processor class (e.g., FeatureEngineer)
+2. Initialize in DataPipeline.__init__()
+3. Call in DataPipeline.execute() as a new stage
+4. Handle errors at stage level
+5. Include results in final PipelineResult
 
 ## Logging
 
@@ -178,37 +338,106 @@ The service uses detailed console logging for debugging:
 - 🔴 Errors and exceptions
 - 🟡 Warnings
 
+**Log Format:**
+```
+[PIPELINE] Starting execution - Batch ID: 20251108_193036_...
+[STAGE 1] Data Validation
+[VALIDATION] ✅ Passed
+[STAGE 2] ML Processing
+[ML PROCESSOR] ⏭️ Skipped (minimal mode)
+[STAGE 3] Data Storage
+[STORAGE] ✅ Dataset stored in MongoDB
+```
+
 ## Testing
 
-**Manual Testing:**
-It's possible to do manual testing via curl, if wanted for easily workflows...
+**Manual Testing via Streamlit Dashboard:**
 
-```bash
-# Start service
-make dev-up
-
-# In another terminal, send test request
-curl -X POST http://localhost:5000/process \
-  -H "Content-Type: application/json" \
-  -d '{
-    "filename": "test.csv",
-    "data": "[{\"col1\": 1, \"col2\": 2}]",
-    "metadata": {
-      "row_count": 1,
-      "column_count": 2,
-      "column_names": ["col1", "col2"]
-    }
-  }'
-```
+1. Start services: `make dev-up`
+2. Open dashboard: http://localhost:8501
+3. Navigate to "Upload Data" page
+4. Upload CSV or Excel file
+5. Monitor ML service logs: `make dev-logs-ml`
 
 **Expected Response:**
 ```json
 {
-  "status": "received",
-  "message": "Dataset received successfully",
-  "timestamp": "2024-01-15T10:30:00",
-  "row_count": 1,
-  "column_count": 2,
-  "filename": "test.csv"
+  "status": "completed",
+  "message": "Dataset processed and stored successfully",
+  "timestamp": "2025-11-08T19:30:36.123456",
+  "batch_id": "20251108_193036_data_csv_a1b2c3d4",
+  "row_count": 1000,
+  "column_count": 15,
+  "filename": "data.csv",
+  "storage_location": "mongodb://datasets",
+  "ml_processing": {
+    "ml_status": "skipped",
+    "mode": "minimal",
+    "reason": "Minimal mode - ML processing disabled"
+  },
+  "processing_summary": {
+    "filename": "data.csv",
+    "rows_processed": 1000,
+    "columns_processed": 15,
+    "has_missing_values": false,
+    "ml_status": "skipped",
+    "processing_mode": "minimal",
+    "storage_status": "success"
+  }
 }
+```
+
+**Verify in MongoDB:**
+```bash
+# Connect to MongoDB
+docker exec -it mongodb_dev mongosh -u root -p root_password123 --authenticationDatabase admin
+
+# Check datasets
+use pi2502
+db.datasets.find().pretty()
+db.pipeline_runs.find().pretty()
+```
+
+## Internal Processing Pipeline
+
+The following diagram illustrates the complete internal flow when the ML service receives an HTTP POST request:
+
+```mermaid
+flowchart TD
+    A[HTTP POST /process<br/>from Dashboard] --> B{Server validates<br/>HTTP request}
+    B -->|Valid| C[Parse JSON payload]
+    B -->|Invalid| ERR1[Return 400 Error]
+
+    C --> D[Create DataPipeline<br/>with ProcessingMode]
+    D --> E[Generate unique<br/>batch_id]
+
+    E --> F[Stage 1: DataValidator]
+    F --> F1{Validate structure<br/>& metadata}
+    F1 -->|Pass| F2[Parse DataFrame<br/>from JSON]
+    F1 -->|Fail| ERR2[Return validation error]
+    F2 --> F3[Create UploadedDataset<br/>object]
+
+    F3 --> G[Stage 2: MLProcessor]
+    G --> G1{Check processing<br/>mode}
+    G1 -->|MINIMAL| G2[Skip ML processing]
+    G1 -->|FULL_ML| G3[AutoMLSelector<br/>execution]
+    G3 --> G4[Train & evaluate<br/>models]
+    G4 --> G5[Select best model]
+
+    G2 --> H[Stage 3: DataStorage]
+    G5 --> H
+    H --> H1[Convert numpy types<br/>to Python native]
+    H1 --> H2[Store dataset<br/>in MongoDB]
+    H2 --> H3[Record pipeline run<br/>in MongoDB]
+
+    H3 --> I[Create PipelineResult<br/>object]
+    I --> J[Return JSON response<br/>to Dashboard]
+
+    style A fill:#e1f5ff
+    style F fill:#fff4e1
+    style G fill:#fff4e1
+    style H fill:#ffe1f5
+    style J fill:#e1f5ff
+    style ERR1 fill:#ffcccc
+    style ERR2 fill:#ffcccc
 ```

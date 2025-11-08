@@ -3,12 +3,20 @@ HTTP Server for ML Model Service
 
 Minimal HTTP server using built-in http.server module (no external frameworks).
 Receives dataset data from the dashboard service and processes ML requests.
+
+Integration:
+- Uses DataPipeline for orchestrated data processing
+- Stores received data in MongoDB
+- Returns standardized pipeline results
 """
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
 from datetime import datetime
 import traceback
+
+# Import data processing pipeline
+from ml_model.components.data_processor import DataPipeline, ProcessingMode, PipelineResult
 
 
 class MLHandler(BaseHTTPRequestHandler):
@@ -45,22 +53,12 @@ class MLHandler(BaseHTTPRequestHandler):
                     self._send_error(400, f"Invalid JSON: {str(e)}")
                     return
 
-                # Validate required fields
-                print("[INFO] Validating dataset structure...")
-                validation_error = self._validate_dataset(data)
-                if validation_error:
-                    print(f"[ERROR] Validation failed: {validation_error}")
-                    self._send_error(400, validation_error)
-                    return
-                print("[SUCCESS] Dataset structure validation passed")
-
                 # Log received data
                 self._log_request(data)
 
-                # Process dataset (for now, just acknowledge receipt)
-                print("[INFO] Processing dataset...")
+                # Delegate to pipeline for processing (includes validation, ML, storage)
+                print("[INFO] Delegating to DataPipeline...")
                 result = self._process_dataset(data)
-                print("[SUCCESS] Dataset processed successfully")
 
                 # Send success response
                 print("[INFO] Sending response to client...")
@@ -108,45 +106,6 @@ class MLHandler(BaseHTTPRequestHandler):
             print(f"[WARNING] Unknown GET endpoint requested: {self.path}")
             self._send_error(404, f"Endpoint not found: {self.path}")
 
-    def _validate_dataset(self, data):
-        """
-        Validate the received dataset structure.
-
-        Expected structure:
-        {
-            "filename": str,
-            "data": str (JSON-encoded DataFrame),
-            "metadata": {
-                "row_count": int,
-                "column_count": int,
-                "column_names": list,
-                ...
-            }
-        }
-        """
-        if not isinstance(data, dict):
-            return "Data must be a JSON object"
-
-        # Check required fields
-        required_fields = ['filename', 'data', 'metadata']
-        missing_fields = [field for field in required_fields if field not in data]
-
-        if missing_fields:
-            return f"Missing required fields: {', '.join(missing_fields)}"
-
-        # Validate metadata structure
-        metadata = data.get('metadata', {})
-        if not isinstance(metadata, dict):
-            return "Metadata must be an object"
-
-        metadata_fields = ['row_count', 'column_count', 'column_names']
-        missing_metadata = [field for field in metadata_fields if field not in metadata]
-
-        if missing_metadata:
-            return f"Missing metadata fields: {', '.join(missing_metadata)}"
-
-        return None  # No errors
-
     def _log_request(self, data):
         """Log received request for debugging."""
         metadata = data.get('metadata', {})
@@ -165,23 +124,42 @@ class MLHandler(BaseHTTPRequestHandler):
 
     def _process_dataset(self, data):
         """
-        Process the received dataset.
+        Process the received dataset using the DataPipeline.
 
-        For minimal implementation, just acknowledge receipt and return metadata.
-        Future: Integrate with ML pipeline (analyses_ml.py, data_processor.py)
+        This integrates with the full data processing pipeline which:
+        1. Validates the incoming data
+        2. Processes through ML (currently placeholder)
+        3. Stores in MongoDB
+        4. Returns standardized results
+
+        Parameters:
+        -----------
+        data : dict
+            Raw data from HTTP request
+
+        Returns:
+        --------
+        dict : Pipeline execution results
         """
-        metadata = data.get('metadata', {})
+        try:
+            # Initialize pipeline with minimal mode (no ML processing for now)
+            pipeline = DataPipeline(mode=ProcessingMode.MINIMAL)
 
-        result = {
-            "status": "received",
-            "message": "Dataset received successfully",
-            "timestamp": datetime.now().isoformat(),
-            "row_count": metadata.get('row_count', 0),
-            "column_count": metadata.get('column_count', 0),
-            "filename": data.get('filename', 'unknown')
-        }
+            # Execute pipeline and get results
+            print("[SERVER] Delegating to DataPipeline...")
+            result = pipeline.execute(data)
 
-        return result
+            # Convert PipelineResult to dictionary for HTTP response
+            return result.to_dict()
+
+        except Exception as e:
+            # If pipeline fails catastrophically, return error
+            print(f"[SERVER ERROR] Pipeline execution failed: {str(e)}")
+            return {
+                "status": "error",
+                "message": f"Processing failed: {str(e)}",
+                "timestamp": datetime.now().isoformat()
+            }
 
     def _send_success(self, result):
         """Send successful response."""
