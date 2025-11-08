@@ -163,40 +163,49 @@ The following diagram illustrates the complete data flow from file upload to res
 
 ```mermaid
 flowchart TD
-    subgraph "User Interface"
+    subgraph UI["User Interface"]
         A[User opens Dashboard] --> B[Navigate to Upload page]
         B --> C[Select and upload file]
         L --> M[Navigate to Results page]
         M --> N[View processed results]
     end
 
-    subgraph "Dashboard Upload Pipeline"
-        C --> D[Stage 1: File Validation<br/>components/uploader.py]
+    subgraph UP["Dashboard Upload Pipeline"]
+        C --> D["Stage 1: File Validation
+        components/uploader.py"]
         D --> D1{Valid file?}
         D1 -->|Yes| E[Create UploadedDataset]
         D1 -->|No| ERR1[Return validation errors]
 
-        E --> F[Stage 2: Data Transformation<br/>components/data_upload_pipeline.py]
+        E --> F["Stage 2: Data Transformation
+        components/data_upload_pipeline.py"]
         F --> F1{Transform mode}
         F1 -->|NONE| F2[Skip transformation]
-        F1 -->|BASIC/FULL| F3[Apply trasformator.py<br/>(Future)]
+        F1 -->|BASIC/FULL| F3["Apply trasformator.py
+        (Future)"]
 
-        F2 --> G[Stage 3: ML Communication<br/>components/data_upload_pipeline.py]
+        F2 --> G["Stage 3: ML Communication
+        components/data_upload_pipeline.py"]
         F3 --> G
         G --> G1[Serialize dataset]
         G1 --> G2[Convert numpy types]
         G2 --> G3[Send HTTP POST]
     end
 
-    subgraph "ML Model Service"
-        G3 --> H[ML Service receives data<br/>ml_model/components/server.py]
+    subgraph ML["ML Model Service"]
+        G3 --> H["ML Service receives data
+        ml_model/components/server.py"]
         H --> I[Process through pipeline]
-        I --> J[Store in MongoDB<br/>- datasets collection<br/>- pipeline_runs collection]
+        I --> J["Store in MongoDB
+        - datasets collection
+        - pipeline_runs collection"]
     end
 
-    subgraph "Dashboard Results Pipeline"
+    subgraph RP["Dashboard Results Pipeline"]
         J --> K[MongoDB]
-        K --> L[Data Results Pipeline<br/>components/data_results_pipeline.py<br/>(TODO)]
+        K --> L["Data Results Pipeline
+        components/data_results_pipeline.py
+        (TODO)"]
         L --> L1[Query processed datasets]
         L1 --> L2[Fetch ML results]
         L2 --> L3[Prepare visualizations]
