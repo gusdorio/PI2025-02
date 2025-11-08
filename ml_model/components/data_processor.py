@@ -159,6 +159,26 @@ class DataValidator:
         tuple : (is_valid, error_message, dataset_object)
         """
         try:
+            # Check for transformation metadata (from dashboard pipeline)
+            transform_info = data.get('transform_info', {})
+            if transform_info:
+                transform_status = transform_info.get('transform_status', 'unknown')
+                transform_mode = transform_info.get('mode', 'unknown')
+                print(f"[VALIDATION] Received data with transformation info")
+                print(f"[VALIDATION] Transform status: {transform_status}")
+                print(f"[VALIDATION] Transform mode: {transform_mode}")
+
+                if transform_status == 'completed':
+                    print(f"[VALIDATION] Data has been transformed")
+                    if 'original_shape' in transform_info:
+                        print(f"[VALIDATION] Original shape: {transform_info['original_shape']}")
+                    if 'transformed_shape' in transform_info:
+                        print(f"[VALIDATION] Transformed shape: {transform_info['transformed_shape']}")
+                    # Future: Apply inverse transformation if needed
+                    # For now, continue with validation as normal
+                elif transform_status == 'skipped':
+                    print(f"[VALIDATION] Transformation was skipped (pass-through mode)")
+
             # Check required fields
             missing_fields = [f for f in self.required_fields if f not in data]
             if missing_fields:
@@ -611,6 +631,12 @@ class DataPipeline:
                 "processing_mode": self.mode.value,
                 "storage_status": "success"
             }
+
+            # Include transformation info if present
+            transform_info = data.get('transform_info', {})
+            if transform_info:
+                summary["transform_status"] = transform_info.get('transform_status', 'none')
+                summary["transform_mode"] = transform_info.get('mode', 'none')
 
             # Store pipeline run
             run_stored = self.storage.store_pipeline_run(

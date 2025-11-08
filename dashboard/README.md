@@ -1,36 +1,110 @@
 # Dashboard Application
 
-Streamlit dashboard for ML operations monitoring and data management.
+Streamlit dashboard with orchestrated data upload pipeline.
 
 ## Structure
 
 ```
 dashboard/
-├── dashboard.py          # Main entry point (homepage with DB status)
-├── config.py            # DB connection and configuration
-├── pages/               # Auto-discovered Streamlit pages
-│   ├── upload.py       # Data upload and ML service communication
-│   └── results.py      # Results viewer
-├── components/          # Service components
-│   ├── uploader.py     # File upload handler and validation
-│   └── ml_client.py    # ML service HTTP client
-└── .streamlit/          # Streamlit configuration
+├── dashboard.py                # Main entry point (homepage with DB status)
+├── config.py                  # DB connection and configuration
+├── pages/                     # Auto-discovered Streamlit pages
+│   ├── upload.py             # Data upload page using pipeline
+│   └── results.py            # Results viewer
+├── components/               # Service components
+│   ├── data_upload_pipeline.py  # Upload pipeline orchestrator
+│   ├── uploader.py          # File validation and reading
+│   └── ml_client.py         # Minimal HTTP wrapper for pipeline
+└── .streamlit/              # Streamlit configuration
 ```
 
-## Database Connection Usage
+## Data Upload Pipeline
 
-This section guides about how to use the MongoDB connection over the application.
-All pages can access the MongoDB connection through `config.py`.
+The dashboard uses an orchestrated pipeline pattern for data processing.
 
-### Basic Usage
+### Architecture
+
+```
+DataUploadPipeline → [Validation → Transformation → ML Communication]
+                                        ↓
+                                   (SKIPPED)
+```
+
+### Pipeline Components
+
+#### data_upload_pipeline.py
+
+Main orchestrator that manages the upload workflow through stages.
+
+```python
+from components.data_upload_pipeline import DataUploadPipeline, TransformMode
+
+# Initialize pipeline (transformation disabled)
+pipeline = DataUploadPipeline(transform_mode=TransformMode.NONE)
+
+# Execute pipeline
+result = pipeline.execute(uploaded_file, upload_service)
+
+# Result structure
+UploadPipelineResult:
+  - status: "completed" or "failed"
+  - message: Human-readable message
+  - dataset: UploadedDataset object
+  - ml_response: Response from ML service
+  - metadata: Processing information
+```
+
+**Processing Modes:**
+- `TransformMode.NONE`: Skip transformation (current default)
+- `TransformMode.BASIC`: Basic cleaning (not implemented)
+- `TransformMode.FULL`: Complete trasformator.py pipeline (not implemented)
+
+### Pipeline Stages
+
+#### Stage 1: File Validation
+Uses existing `UploadService` from `uploader.py` to validate and read files.
+
+#### Stage 2: Data Transformation
+Currently **SKIPPED** in `NONE` mode. Prepared for integration with `models/trasformator.py`.
+
+```python
+class DataTransformer:
+    def transform(self, dataset: UploadedDataset) -> Tuple[UploadedDataset, Dict]:
+        if self.mode == TransformMode.NONE:
+            # Pass through unchanged
+            return dataset, {"transform_status": "skipped"}
+
+        # Future: Apply trasformator.py pipeline
+        # from models.trasformator import data_transformation
+        # transformer = data_transformation(dataset.raw_dataframe)
+        # processed_df = transformer.run_pipeline()
+```
+
+#### Stage 3: ML Communication
+Serializes data and sends to ML service. Includes:
+- Numpy type conversion (moved from ml_client)
+- Payload preparation with transformation metadata
+- HTTP transmission
+
+### Enabling Transformation
+
+To enable data transformation, change the pipeline mode:
+
+```python
+# In upload.py
+pipeline = DataUploadPipeline(transform_mode=TransformMode.FULL)
+```
+
+Then uncomment the transformation logic in `DataTransformer.transform()` method.
+
+## Database Connection
+
+MongoDB connection is accessed through `config.py`.
 
 ```python
 from config import get_database_connection
 
-# Get cached connection
 db = get_database_connection()
-
-# Access database
 collection = db.get_collection('my_collection')
 ```
 
@@ -50,57 +124,28 @@ count = collection.count_documents({})
 collection.update_one({'_id': doc_id}, {'$set': {'status': 'processed'}})
 ```
 
-## ML Service Communication
-
-The dashboard communicates with the ML model service via HTTP.
-
-### ml_client.py
-
-Sends datasets to the ML service for processing.
-
-```python
-from components.ml_client import send_dataset_to_ml
-
-# Send dataset to ML service
-response = send_dataset_to_ml(dataset)
-
-# Response structure
-{
-    "status": "received",
-    "message": "Dataset received successfully",
-    "timestamp": "2024-01-15T10:30:00",
-    "row_count": 1000,
-    "column_count": 15,
-    "filename": "data.xlsx"
-}
-```
-
-**Key Features:**
-- Automatic numpy type conversion for JSON serialization
-- Comprehensive error handling (connection, timeout, HTTP errors)
-- Detailed logging for debugging
-- 60-second timeout for large datasets
-
-## Pages Extension
-
-This section guides about how the pages logic works and how to extend functionality.
+## Pages
 
 ### upload.py
-Upload file → Validate → Send to ML → Display response
+Uses DataUploadPipeline to process uploads:
 
 ```python
-from components.uploader import UploadService
-from components.ml_client import send_dataset_to_ml
+from components.data_upload_pipeline import DataUploadPipeline, TransformMode
 
-# Validate uploaded file
-dataset, errors = upload_service.process_upload(uploaded_file)
+# Initialize pipeline
+pipeline = DataUploadPipeline(transform_mode=TransformMode.NONE)
 
-# Send to ML service
-ml_response = send_dataset_to_ml(dataset)
+# Process upload
+result = pipeline.execute(uploaded_file, upload_service)
+
+if result.is_success:
+    # Display results
+    dataset = result.dataset
+    ml_response = result.ml_response
 ```
 
 ### results.py
-Query DB → Display metrics → Visualize
+Queries MongoDB for pipeline runs and displays metrics:
 
 ```python
 # Query results

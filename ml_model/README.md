@@ -58,6 +58,11 @@ POST /process
       "column_names": list,
       "file_type": str,
       "has_missing_values": bool
+    },
+    "transform_info": {  # Optional, from dashboard pipeline
+      "transform_status": str ("skipped", "completed"),
+      "mode": str ("none", "basic", "full"),
+      "original_shape": tuple (optional)
     }
   }
   Response: {
@@ -136,11 +141,23 @@ result = pipeline.execute(data)
 
 Validates incoming data structure and content.
 
+- Detects transformation metadata from dashboard pipeline
 - Checks required fields (filename, data, metadata)
 - Validates metadata structure
 - Enforces size limits (1M rows, 1K columns max)
 - Parses JSON to pandas DataFrame
 - Creates UploadedDataset objects
+
+Transformation awareness:
+```python
+# Automatically detects if data has been transformed
+transform_info = data.get('transform_info', {})
+if transform_info.get('transform_status') == 'completed':
+    # Logs transformation details
+    # Ready for inverse transformation when needed
+elif transform_info.get('transform_status') == 'skipped':
+    # Processes data normally
+```
 
 **MLProcessor:**
 
@@ -248,7 +265,9 @@ The service stores data in MongoDB with the following schema:
     has_missing_values: false,
     ml_status: "skipped",
     processing_mode: "minimal",
-    storage_status: "success"
+    storage_status: "success",
+    transform_status: "skipped",  // From dashboard pipeline
+    transform_mode: "none"         // Transformation mode used
   },
   errors: [],  // Array of error objects if failed
   metadata: {
@@ -275,14 +294,14 @@ MONGO_AUTH_SOURCE=admin
 ### Current Data Flow
 
 ```
-1. Dashboard sends POST /process with dataset
+1. Dashboard sends POST /process with dataset and optional transform_info
 2. Server parses JSON and logs request
 3. Server delegates to DataPipeline
 4. DataPipeline executes stages:
-   a. DataValidator validates structure
+   a. DataValidator validates structure and detects transformation
    b. MLProcessor runs (currently skips in MINIMAL mode)
    c. DataStorage stores in MongoDB
-   d. Pipeline run recorded for tracking
+   d. Pipeline run recorded with transformation metadata
 5. Server returns standardized result to dashboard
 ```
 
@@ -382,7 +401,9 @@ The service uses detailed console logging for debugging:
     "has_missing_values": false,
     "ml_status": "skipped",
     "processing_mode": "minimal",
-    "storage_status": "success"
+    "storage_status": "success",
+    "transform_status": "skipped",
+    "transform_mode": "none"
   }
 }
 ```
@@ -412,7 +433,8 @@ flowchart TD
     D --> E[Generate unique<br/>batch_id]
 
     E --> F[Stage 1: DataValidator]
-    F --> F1{Validate structure<br/>& metadata}
+    F --> F0{Check for<br/>transform_info}
+    F0 --> F1{Validate structure<br/>& metadata}
     F1 -->|Pass| F2[Parse DataFrame<br/>from JSON]
     F1 -->|Fail| ERR2[Return validation error]
     F2 --> F3[Create UploadedDataset<br/>object]
@@ -428,7 +450,7 @@ flowchart TD
     G5 --> H
     H --> H1[Convert numpy types<br/>to Python native]
     H1 --> H2[Store dataset<br/>in MongoDB]
-    H2 --> H3[Record pipeline run<br/>in MongoDB]
+    H2 --> H3[Record pipeline run<br/>with transform_info]
 
     H3 --> I[Create PipelineResult<br/>object]
     I --> J[Return JSON response<br/>to Dashboard]

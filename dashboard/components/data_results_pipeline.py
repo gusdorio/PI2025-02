@@ -1,0 +1,2 @@
+# This interface is intended to be used to take the results which will be displayed at the streamlit page 'results.py'
+# It will take the processed data from the ml_model (via mongodb) and prepare it for visualization
