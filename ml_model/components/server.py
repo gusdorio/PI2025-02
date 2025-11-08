@@ -1,4 +1,4 @@
-# Using built-in http.server (ultra-minimal)
+# Built-in http.server
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
 
