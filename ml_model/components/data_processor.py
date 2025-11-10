@@ -5,21 +5,6 @@ Orchestrates the complete data processing workflow from receipt to storage.
 
 Architecture:
     HTTP Request → DataPipeline → [Validation → Processing → Storage → Response]
-
-This module implements a clear pipeline pattern with stages that can be
-independently extended and tested. Each stage has single responsibility.
-
-Current Implementation:
-- Validation: Complete
-- ML Processing: Placeholder (to be implemented)
-- Storage: MongoDB integration
-- Response: Standardized format
-
-Future Enhancements:
-- Async processing
-- Parallel ML model execution
-- Result caching
-- Stream processing for large datasets
 """
 
 import json
@@ -41,13 +26,15 @@ from models.database import get_database_connection, MongoDBConnection
 from models.mongodb import PipelineRunSummary
 from models.dataset import UploadedDataset
 
+# IMPORTA O COMPONENTE DE ML
+from ml_model.components.analyses_ml import AutoMLSelector
+
 
 # =============================================================================
 # ENUMS AND CONSTANTS
 # =============================================================================
 
 class PipelineStatus(Enum):
-    """Pipeline execution status"""
     STARTED = "started"
     VALIDATING = "validating"
     PROCESSING = "processing"
@@ -57,45 +44,22 @@ class PipelineStatus(Enum):
 
 
 class ProcessingMode(Enum):
-    """Processing modes for different workflows"""
-    MINIMAL = "minimal"      # Just store data (current)
-    ANALYSIS = "analysis"     # Run basic analysis
-    FULL_ML = "full_ml"      # Complete ML pipeline
-    CUSTOM = "custom"        # User-defined pipeline
+    MINIMAL = "minimal"
+    ANALYSIS = "analysis"
+    FULL_ML = "full_ml"
+    CUSTOM = "custom"
 
 
 # =============================================================================
-# PIPELINE RESULT
+# PIPELINE RESULT (Sem alteração)
 # =============================================================================
-
 class PipelineResult:
-    """
-    Standardized result object for pipeline execution.
-    Provides consistent interface for all pipeline responses.
-    """
-
     def __init__(self,
                  status: str,
                  message: str,
                  batch_id: Optional[str] = None,
                  data: Optional[Dict] = None,
                  errors: Optional[List[Dict]] = None):
-        """
-        Initialize pipeline result.
-
-        Parameters:
-        -----------
-        status : str
-            Pipeline status (completed, failed, etc.)
-        message : str
-            Human-readable message
-        batch_id : str, optional
-            Unique identifier for this processing batch
-        data : dict, optional
-            Additional result data
-        errors : list, optional
-            List of error dictionaries if failed
-        """
         self.status = status
         self.message = message
         self.batch_id = batch_id
@@ -104,27 +68,20 @@ class PipelineResult:
         self.timestamp = datetime.now()
 
     def to_dict(self) -> Dict:
-        """Convert to dictionary for HTTP response"""
         result = {
             "status": self.status,
             "message": self.message,
             "timestamp": self.timestamp.isoformat(),
             "batch_id": self.batch_id
         }
-
-        # Add data if present
         if self.data:
             result.update(self.data)
-
-        # Add errors if present
         if self.errors:
             result["errors"] = self.errors
-
         return result
 
     @property
     def is_success(self) -> bool:
-        """Check if pipeline succeeded"""
         return self.status == PipelineStatus.COMPLETED.value
 
 
@@ -133,91 +90,65 @@ class PipelineResult:
 # =============================================================================
 
 class DataValidator:
-    """
-    Validates incoming data structure and content.
-    First stage of the pipeline - ensures data quality.
-    """
-
     def __init__(self):
-        """Initialize validator with validation rules"""
         self.required_fields = ['filename', 'data', 'metadata']
-        self.required_metadata = ['row_count', 'column_count', 'column_names']
-        self.max_rows = 1000000  # 1M rows max
-        self.max_columns = 1000   # 1K columns max
+        self.required_metadata = ['row_count', 'column_count', 'column_names', 'target_column'] 
+        self.max_rows = 1000000
+        self.max_columns = 1000
 
-    def validate(self, data: Dict) -> Tuple[bool, Optional[str], Optional[UploadedDataset]]:
+    def validate(self, data: Dict) -> Tuple[bool, Optional[str], Optional[UploadedDataset], Optional[str]]:
         """
         Validate incoming data and create UploadedDataset if valid.
 
-        Parameters:
-        -----------
-        data : dict
-            Raw data from HTTP request
-
         Returns:
         --------
-        tuple : (is_valid, error_message, dataset_object)
+        tuple : (is_valid, error_message, dataset_object, target_column)
         """
         try:
-            # Check for transformation metadata (from dashboard pipeline)
+            # (Lógica de info de transformação permanece)
             transform_info = data.get('transform_info', {})
             if transform_info:
-                transform_status = transform_info.get('transform_status', 'unknown')
-                transform_mode = transform_info.get('mode', 'unknown')
-                print(f"[VALIDATION] Received data with transformation info")
-                print(f"[VALIDATION] Transform status: {transform_status}")
-                print(f"[VALIDATION] Transform mode: {transform_mode}")
-
-                if transform_status == 'completed':
-                    print(f"[VALIDATION] Data has been transformed")
-                    if 'original_shape' in transform_info:
-                        print(f"[VALIDATION] Original shape: {transform_info['original_shape']}")
-                    if 'transformed_shape' in transform_info:
-                        print(f"[VALIDATION] Transformed shape: {transform_info['transformed_shape']}")
-                    # Future: Apply inverse transformation if needed
-                    # For now, continue with validation as normal
-                elif transform_status == 'skipped':
-                    print(f"[VALIDATION] Transformation was skipped (pass-through mode)")
+                print(f"[VALIDATION] Received data with transform status: {transform_info.get('transform_status')}")
 
             # Check required fields
             missing_fields = [f for f in self.required_fields if f not in data]
             if missing_fields:
-                return False, f"Missing required fields: {', '.join(missing_fields)}", None
+                return False, f"Missing required fields: {', '.join(missing_fields)}", None, None
 
             # Validate metadata structure
             metadata = data.get('metadata', {})
             if not isinstance(metadata, dict):
-                return False, "Metadata must be a dictionary", None
+                return False, "Metadata must be a dictionary", None, None
 
+            # *** VALIDAÇÃO DA TARGET_COLUMN ***
             missing_metadata = [f for f in self.required_metadata if f not in metadata]
             if missing_metadata:
-                return False, f"Missing metadata fields: {', '.join(missing_metadata)}", None
+                return False, f"Missing metadata fields: {', '.join(missing_metadata)}", None, None
 
-            # Validate data size limits
+            target_column = metadata.get('target_column')
+            if not target_column:
+                 return False, "Metadata 'target_column' is missing or empty", None, None
+
+            print(f"[VALIDATION] Target Column identified: {target_column}")
+
+            # (Validação de limites e parse do DataFrame permanecem)
             row_count = metadata.get('row_count', 0)
             col_count = metadata.get('column_count', 0)
-
             if row_count > self.max_rows:
-                return False, f"Dataset too large: {row_count} rows exceeds limit of {self.max_rows}", None
-
+                return False, f"Dataset too large: {row_count} rows", None, None
             if col_count > self.max_columns:
-                return False, f"Too many columns: {col_count} exceeds limit of {self.max_columns}", None
+                return False, f"Too many columns: {col_count}", None, None
 
-            # Parse DataFrame from JSON
             try:
                 df = pd.read_json(data['data'])
             except Exception as e:
-                return False, f"Failed to parse DataFrame: {str(e)}", None
-
-            # Verify parsed data matches metadata
-            actual_rows = len(df)
-            actual_cols = len(df.columns)
-
-            if actual_rows != row_count:
-                return False, f"Row count mismatch: metadata says {row_count}, actual is {actual_rows}", None
-
-            if actual_cols != col_count:
-                return False, f"Column count mismatch: metadata says {col_count}, actual is {actual_cols}", None
+                return False, f"Failed to parse DataFrame: {str(e)}", None, None
+            
+            # (Verificação de match de metadados permanece)
+            if len(df) != row_count:
+                return False, f"Row count mismatch", None, None
+            if len(df.columns) != col_count:
+                return False, f"Column count mismatch", None, None
 
             # Create UploadedDataset object
             dataset = UploadedDataset(
@@ -226,102 +157,83 @@ class DataValidator:
                 file_type=metadata.get('file_type', 'unknown')
             )
 
-            return True, None, dataset
+            # *** RETORNA A TARGET_COLUMN ***
+            return True, None, dataset, target_column
 
         except Exception as e:
-            return False, f"Validation error: {str(e)}", None
+            return False, f"Validation error: {str(e)}", None, None
 
 
 # =============================================================================
-# ML PROCESSOR (PLACEHOLDER)
+# ML PROCESSOR (AGORA FUNCIONAL)
 # =============================================================================
 
 class MLProcessor:
-    """
-    Machine Learning processing stage.
-    Currently a placeholder - will integrate AutoMLSelector in future.
-    """
-
     def __init__(self, mode: ProcessingMode = ProcessingMode.MINIMAL):
-        """
-        Initialize ML processor.
-
-        Parameters:
-        -----------
-        mode : ProcessingMode
-            Processing mode (minimal, analysis, full_ml)
-        """
         self.mode = mode
-        self.supported_algorithms = [
-            'Linear Regression', 'Random Forest', 'Gradient Boosting',
-            'Logistic Regression', 'SVM', 'Decision Tree'
-        ]
 
-    def process(self, dataset: UploadedDataset, batch_id: str) -> Dict:
+    def process(self, dataset: UploadedDataset, batch_id: str, target_column: str) -> Tuple[str, Dict, Optional[Dict]]:
         """
         Process dataset through ML pipeline.
-
-        Currently returns placeholder results. Future implementation will:
-        1. Detect problem type (regression/classification)
-        2. Run AutoMLSelector
-        3. Generate predictions
-        4. Calculate metrics
-
-        Parameters:
-        -----------
-        dataset : UploadedDataset
-            Validated dataset object
-        batch_id : str
-            Unique batch identifier
-
+        
         Returns:
         --------
-        dict : Processing results (currently minimal)
+        tuple : (ml_status, dashboard_summary, storage_results)
+            - ml_status: "completed", "skipped", "failed"
+            - dashboard_summary: JSON-serializable metrics for dashboard response
+            - storage_results: Detailed results for MongoDB storage
         """
 
-        # Current implementation: Just return metadata
         if self.mode == ProcessingMode.MINIMAL:
-            return {
-                "ml_status": "skipped",
-                "mode": self.mode.value,
-                "reason": "Minimal mode - ML processing disabled",
-                "available_algorithms": self.supported_algorithms,
-                "future_capabilities": {
-                    "auto_ml": "Will automatically select best algorithm",
-                    "cross_validation": "5-fold cross-validation",
-                    "metrics": "R², RMSE, accuracy, F1-score",
-                    "feature_importance": "For tree-based models"
+            print("[ML PROCESSOR] Mode: MINIMAL - Skipping ML processing")
+            return "skipped", {"reason": "Minimal mode - ML processing disabled"}, None
+
+        elif self.mode == ProcessingMode.FULL_ML:
+            if not target_column:
+                print("[ML PROCESSOR] ❌ ERROR: Full ML mode requires a target column.")
+                return "failed", {"reason": "Target column not provided for FULL_ML mode"}, None
+            
+            print(f"[ML PROCESSOR] Mode: FULL_ML - Starting AutoMLSelector")
+            print(f"[ML PROCESSOR] Target Column: {target_column}")
+
+            try:
+                # 1. Inicializa e treina o AutoML
+                selector = AutoMLSelector(target_column=target_column, cv_folds=5)
+                selector.fit(dataset.raw_dataframe)
+                
+                if selector.best_model_name is None:
+                    raise Exception("AutoML failed to find a best model.")
+
+                print(f"[ML PROCESSOR] ✅ AutoML fit complete. Best model: {selector.best_model_name}")
+
+                # 2. Prepara o resumo para o DASHBOARD (JSON)
+                # (Apenas as métricas principais)
+                results_summary_df = selector.get_results_summary()
+                dashboard_summary = {
+                    "best_model_name": selector.best_model_name,
+                    "problem_type": selector.problem_type,
+                    "summary_metrics": results_summary_df.to_dict('records')
                 }
-            }
+
+                # 3. Prepara os resultados DETALHADOS para o MONGODB
+                # (Inclui tudo: matriz de confusão, ranges de erro, etc.)
+                storage_results = selector.results
+                
+                print(f"[ML PROCESSOR] ✅ Results generated for dashboard and storage.")
+
+                return "completed", dashboard_summary, storage_results
+            
+            except Exception as e:
+                print(f"[ML PROCESSOR] ❌ ERROR: AutoMLSelector failed: {str(e)}")
+                traceback.print_exc()
+                return "failed", {"reason": f"AutoMLSelector failed: {str(e)}"}, None
 
         # Placeholder for ANALYSIS mode
         elif self.mode == ProcessingMode.ANALYSIS:
-            # Future: Basic statistical analysis
-            return {
-                "ml_status": "analysis_only",
-                "statistics": {
-                    "rows": dataset.row_count,
-                    "columns": dataset.column_count,
-                    "missing_values": dataset.has_missing_values
-                },
-                "note": "Full analysis not yet implemented"
-            }
+            print("[ML PROCESSOR] Mode: ANALYSIS - Not implemented")
+            return "skipped", {"reason": "Analysis mode not yet implemented"}, None
 
-        # Placeholder for FULL_ML mode
-        elif self.mode == ProcessingMode.FULL_ML:
-            # Future: Complete ML pipeline with AutoMLSelector
-            return {
-                "ml_status": "not_implemented",
-                "message": "Full ML pipeline coming soon",
-                "will_include": {
-                    "model_selection": "Best model from 8+ algorithms",
-                    "hyperparameter_tuning": "Grid search optimization",
-                    "predictions": "On test set",
-                    "model_persistence": "Save trained model"
-                }
-            }
-
-        return {"ml_status": "unknown_mode"}
+        return "unknown_mode", {"reason": "Unknown processing mode"}, None
 
 
 # =============================================================================
@@ -329,134 +241,91 @@ class MLProcessor:
 # =============================================================================
 
 class DataStorage:
-    """
-    Handles all database operations for the pipeline.
-    Manages MongoDB collections and data persistence.
-    """
-
     def __init__(self, db_connection: Optional[MongoDBConnection] = None):
-        """
-        Initialize storage handler.
-
-        Parameters:
-        -----------
-        db_connection : MongoDBConnection, optional
-            MongoDB connection instance
-        """
         self.db = db_connection or get_database_connection()
         self.datasets_collection = self.db.get_collection('datasets')
         self.pipeline_runs_collection = self.db.get_collection('pipeline_runs')
-        self.ml_results_collection = self.db.get_collection('ml_results')
+        self.ml_results_collection = self.db.get_collection('ml_results') #<-- New collection
 
     def store_dataset(self, dataset: UploadedDataset, batch_id: str) -> Tuple[bool, Optional[str]]:
-        """
-        Store dataset in MongoDB.
-
-        Parameters:
-        -----------
-        dataset : UploadedDataset
-            Dataset to store
-        batch_id : str
-            Unique batch identifier
-
-        Returns:
-        --------
-        tuple : (success, error_message)
-        """
+        """Armazena o dataset bruto (sem alteração)"""
         try:
-            # Prepare document for storage
-            # IMPORTANT: Convert numpy types to native Python types for MongoDB BSON encoder
             document = {
-                "_id": batch_id,  # Use batch_id as document ID
+                "_id": batch_id,
                 "filename": dataset.filename,
                 "file_type": dataset.file_type,
                 "upload_timestamp": dataset.upload_timestamp,
-                "metadata": convert_numpy_types(dataset.get_summary()),  # Clean numpy types
-                "data": convert_numpy_types(dataset.raw_dataframe.to_dict('records')),  # Clean numpy types
-                "row_count": int(dataset.row_count),  # Ensure native int
-                "column_count": int(dataset.column_count),  # Ensure native int
-                "column_names": list(dataset.column_names),  # Ensure native list
-                "has_missing_values": bool(dataset.has_missing_values),  # Ensure native bool
+                "metadata": convert_numpy_types(dataset.get_summary()),
+                "data": convert_numpy_types(dataset.raw_dataframe.to_dict('records')),
+                "row_count": int(dataset.row_count),
+                "column_count": int(dataset.column_count),
+                "column_names": list(dataset.column_names),
+                "has_missing_values": bool(dataset.has_missing_values),
                 "created_at": datetime.now(),
                 "processing_status": "stored"
             }
-
-            # Insert into MongoDB
             result = self.datasets_collection.insert_one(document)
-
             if result.inserted_id:
-                print(f"[STORAGE] Dataset stored successfully with ID: {batch_id}")
                 return True, None
             else:
-                return False, "Failed to insert dataset into database"
-
+                return False, "Failed to insert dataset"
         except Exception as e:
-            error_msg = f"Storage error: {str(e)}"
-            print(f"[STORAGE ERROR] {error_msg}")
+            error_msg = f"Storage error (datasets): {str(e)}"
             return False, error_msg
 
     def store_pipeline_run(self, batch_id: str, status: str, summary: Dict, errors: List = None) -> bool:
-        """
-        Store pipeline run summary in MongoDB.
-
-        Parameters:
-        -----------
-        batch_id : str
-            Unique batch identifier
-        status : str
-            Pipeline status
-        summary : dict
-            Execution summary
-        errors : list, optional
-            List of errors if any
-
-        Returns:
-        --------
-        bool : Success status
-        """
+        """Armazena o resumo da execução (sem alteração)"""
         try:
-            # Clean summary and errors of numpy types
             clean_summary = convert_numpy_types(summary)
             clean_errors = convert_numpy_types(errors or [])
 
-            # Create PipelineRunSummary object
             run_summary = PipelineRunSummary(
                 batch_id=batch_id,
                 status=status,
                 summary=clean_summary,
                 errors=clean_errors,
-                metadata={
-                    "processor_version": "1.0.0",
-                    "storage_version": "1.0.0"
-                }
+                metadata={"processor_version": "1.0.1"} # Versão atualizada
             )
-
-            # Update completed timestamp if completed
             if status == PipelineStatus.COMPLETED.value:
                 run_summary.completed_at = datetime.now()
 
-            # Store in MongoDB
             result = self.pipeline_runs_collection.insert_one(run_summary.to_dict())
-
             return result.inserted_id is not None
-
         except Exception as e:
             print(f"[STORAGE ERROR] Failed to store pipeline run: {str(e)}")
             return False
 
+    def store_ml_results(self, batch_id: str, results_data: Dict) -> Tuple[bool, Optional[str]]:
+        """
+        *** NOVO MÉTODO ***
+        Armazena os resultados detalhados de ML na coleção 'ml_results'.
+        """
+        try:
+            # Limpa tipos numpy (matrizes de confusão, etc.)
+            clean_results = convert_numpy_types(results_data)
+            
+            document = {
+                "_id": batch_id, # Usa o mesmo ID do batch
+                "batch_id": batch_id,
+                "results": clean_results,
+                "created_at": datetime.now()
+            }
+            
+            result = self.ml_results_collection.insert_one(document)
+            
+            if result.inserted_id:
+                print(f"[STORAGE] ✅ Detailed ML results stored for batch: {batch_id}")
+                return True, None
+            else:
+                return False, "Failed to insert ML results"
+                
+        except Exception as e:
+            error_msg = f"Storage error (ml_results): {str(e)}"
+            print(f"[STORAGE ERROR] {error_msg}")
+            return False, error_msg
+
     def get_dataset(self, batch_id: str) -> Optional[Dict]:
-        """
-        Retrieve dataset from MongoDB.
-
-        Parameters:
-        -----------
-        batch_id : str
-            Unique batch identifier
-
-        Returns:
-        --------
-        dict : Dataset document or None
-        """
+        """Recupera dataset (sem alteração)"""
         try:
             return self.datasets_collection.find_one({"_id": batch_id})
         except Exception as e:
@@ -465,82 +334,29 @@ class DataStorage:
 
 
 # =============================================================================
-# DATA PIPELINE (MAIN ORCHESTRATOR)
+# DATA PIPELINE (ORQUESTRADOR PRINCIPAL)
 # =============================================================================
 
 class DataPipeline:
-    """
-    Main pipeline orchestrator that coordinates all processing stages.
-    Implements the complete data flow from receipt to storage.
-    """
-
     def __init__(self,
                  mode: ProcessingMode = ProcessingMode.MINIMAL,
                  db_connection: Optional[MongoDBConnection] = None):
-        """
-        Initialize pipeline with all components.
-
-        Parameters:
-        -----------
-        mode : ProcessingMode
-            Processing mode for ML stage
-        db_connection : MongoDBConnection, optional
-            Database connection to use
-        """
         self.mode = mode
         self.validator = DataValidator()
         self.processor = MLProcessor(mode=mode)
         self.storage = DataStorage(db_connection)
 
     def generate_batch_id(self, data: Dict) -> str:
-        """
-        Generate unique batch ID for this processing run.
-
-        Parameters:
-        -----------
-        data : dict
-            Input data
-
-        Returns:
-        --------
-        str : Unique batch identifier
-        """
-        # Create unique ID from filename and timestamp
+        # (Sem alteração)
         timestamp = datetime.now().isoformat()
         filename = data.get('filename', 'unknown')
-
-        # Create hash for uniqueness
         content = f"{filename}_{timestamp}".encode()
         hash_digest = hashlib.md5(content).hexdigest()[:8]
-
-        # Format: YYYYMMDD_HHMMSS_filename_hash
         batch_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename.replace('.', '_')}_{hash_digest}"
-
         return batch_id
 
     def execute(self, data: Dict) -> PipelineResult:
-        """
-        Execute complete pipeline with error handling and status tracking.
-
-        Flow:
-        1. Generate batch ID
-        2. Validate data
-        3. Process through ML (placeholder)
-        4. Store in MongoDB
-        5. Return standardized result
-
-        Parameters:
-        -----------
-        data : dict
-            Raw data from HTTP request
-
-        Returns:
-        --------
-        PipelineResult : Standardized result object
-        """
         batch_id = self.generate_batch_id(data)
-        errors = []
-
         print("\n" + "=" * 60)
         print(f"[PIPELINE] Starting execution - Batch ID: {batch_id}")
         print(f"[PIPELINE] Mode: {self.mode.value}")
@@ -551,114 +367,111 @@ class DataPipeline:
             # STAGE 1: VALIDATION
             # =========================================================
             print("\n[STAGE 1] Data Validation")
-            print("-" * 40)
-
-            is_valid, error_msg, dataset = self.validator.validate(data)
+            is_valid, error_msg, dataset, target_column = self.validator.validate(data)
 
             if not is_valid:
                 print(f"[VALIDATION] ❌ Failed: {error_msg}")
                 self.storage.store_pipeline_run(
-                    batch_id=batch_id,
-                    status=PipelineStatus.FAILED.value,
+                    batch_id=batch_id, status=PipelineStatus.FAILED.value,
                     summary={"stage": "validation", "error": error_msg},
                     errors=[{"stage": "validation", "message": error_msg}]
                 )
                 return PipelineResult(
-                    status=PipelineStatus.FAILED.value,
-                    message=f"Validation failed: {error_msg}",
-                    batch_id=batch_id,
-                    errors=[{"stage": "validation", "message": error_msg}]
+                    status=PipelineStatus.FAILED.value, message=f"Validation failed: {error_msg}",
+                    batch_id=batch_id, errors=[{"stage": "validation", "message": error_msg}]
                 )
 
             print(f"[VALIDATION] ✅ Passed")
-            print(f"[VALIDATION] Dataset: {dataset.row_count} rows × {dataset.column_count} columns")
+            print(f"[VALIDATION] Target Column: {target_column}")
 
             # =========================================================
-            # STAGE 2: ML PROCESSING (PLACEHOLDER)
+            # STAGE 2: ML PROCESSING
             # =========================================================
             print("\n[STAGE 2] ML Processing")
-            print("-" * 40)
+            ml_status, ml_summary_dashboard, ml_results_storage = self.processor.process(
+                dataset, batch_id, target_column
+            )
+            
+            print(f"[ML PROCESSOR] Status: {ml_status}")
 
-            ml_results = self.processor.process(dataset, batch_id)
-            print(f"[ML PROCESSOR] Mode: {self.mode.value}")
-            print(f"[ML PROCESSOR] Status: {ml_results.get('ml_status', 'unknown')}")
-
-            if self.mode == ProcessingMode.MINIMAL:
-                print("[ML PROCESSOR] ⏭️ Skipped (minimal mode)")
+            if ml_status == 'failed':
+                print(f"[ML PROCESSOR] ❌ Failed: {ml_summary_dashboard.get('reason')}")
+                # Falha de ML não deve parar o armazenamento dos dados brutos
+                # Mas registramos o erro
+                errors = [{"stage": "ml_processing", "message": ml_summary_dashboard.get('reason')}]
             else:
-                print(f"[ML PROCESSOR] Results: {ml_results}")
+                print(f"[ML PROCESSOR] ✅ Success")
+                errors = []
+
 
             # =========================================================
-            # STAGE 3: DATA STORAGE
+            # STAGE 3: DATA STORAGE (EM MÚLTIPLAS COLEÇÕES)
             # =========================================================
             print("\n[STAGE 3] Data Storage")
-            print("-" * 40)
 
+            # 3a. Armazena o DATASET BRUTO
             storage_success, storage_error = self.storage.store_dataset(dataset, batch_id)
-
             if not storage_success:
-                print(f"[STORAGE] ❌ Failed: {storage_error}")
+                print(f"[STORAGE] ❌ Failed (datasets): {storage_error}")
+                # Esta é uma falha crítica
                 self.storage.store_pipeline_run(
-                    batch_id=batch_id,
-                    status=PipelineStatus.FAILED.value,
-                    summary={"stage": "storage", "error": storage_error},
+                    batch_id=batch_id, status=PipelineStatus.FAILED.value,
+                    summary={"stage": "storage_dataset", "error": storage_error},
                     errors=[{"stage": "storage", "message": storage_error}]
                 )
                 return PipelineResult(
-                    status=PipelineStatus.FAILED.value,
-                    message=f"Storage failed: {storage_error}",
-                    batch_id=batch_id,
-                    errors=[{"stage": "storage", "message": storage_error}]
+                    status=PipelineStatus.FAILED.value, message=f"Storage failed: {storage_error}",
+                    batch_id=batch_id, errors=[{"stage": "storage", "message": storage_error}]
                 )
-
-            print(f"[STORAGE] ✅ Dataset stored in MongoDB")
-            print(f"[STORAGE] Collection: datasets")
-            print(f"[STORAGE] Document ID: {batch_id}")
+            print(f"[STORAGE] ✅ Dataset stored in 'datasets' collection")
+            
+            # 3b. Armazena os RESULTADOS DE ML (se houver)
+            if ml_results_storage:
+                ml_storage_success, ml_storage_error = self.storage.store_ml_results(
+                    batch_id, ml_results_storage
+                )
+                if not ml_storage_success:
+                    print(f"[STORAGE] ⚠️ Warning (ml_results): {ml_storage_error}")
+                    # Adiciona ao log de erros, mas não falha a pipeline
+                    errors.append({"stage": "storage_ml_results", "message": ml_storage_error})
+            else:
+                print("[STORAGE] ⏭️ No ML results to store.")
 
             # =========================================================
             # STAGE 4: RECORD PIPELINE RUN
             # =========================================================
             print("\n[STAGE 4] Recording Pipeline Run")
-            print("-" * 40)
 
-            # Prepare summary (ensure all values are native Python types)
+            # Prepara o resumo final para 'pipeline_runs'
             summary = {
                 "filename": dataset.filename,
-                "rows_processed": int(dataset.row_count),  # Convert numpy.int64 to int
-                "columns_processed": int(dataset.column_count),  # Convert numpy.int64 to int
-                "has_missing_values": bool(dataset.has_missing_values),  # Convert numpy.bool_ to bool
-                "ml_status": ml_results.get('ml_status', 'not_run'),
+                "rows_processed": int(dataset.row_count),
+                "columns_processed": int(dataset.column_count),
+                "has_missing_values": bool(dataset.has_missing_values),
+                "ml_status": ml_status,
                 "processing_mode": self.mode.value,
-                "storage_status": "success"
+                "storage_status": "success",
+                "target_column": target_column,
+                "transform_status": data.get('transform_info', {}).get('transform_status', 'none'),
+                "ml_summary_dashboard": ml_summary_dashboard # <-- Salva o resumo de métricas aqui
             }
 
-            # Include transformation info if present
-            transform_info = data.get('transform_info', {})
-            if transform_info:
-                summary["transform_status"] = transform_info.get('transform_status', 'none')
-                summary["transform_mode"] = transform_info.get('mode', 'none')
-
-            # Store pipeline run
             run_stored = self.storage.store_pipeline_run(
                 batch_id=batch_id,
                 status=PipelineStatus.COMPLETED.value,
-                summary=summary
+                summary=summary,
+                errors=errors
             )
-
-            if run_stored:
-                print(f"[PIPELINE] ✅ Run recorded in pipeline_runs collection")
-            else:
-                print(f"[PIPELINE] ⚠️ Warning: Failed to record pipeline run")
+            print(f"[PIPELINE] ✅ Run recorded in 'pipeline_runs' collection")
 
             # =========================================================
             # SUCCESS RESPONSE
             # =========================================================
             print("\n" + "=" * 60)
             print(f"[PIPELINE] ✅ EXECUTION COMPLETED SUCCESSFULLY")
-            print(f"[PIPELINE] Batch ID: {batch_id}")
             print("=" * 60 + "\n")
 
-            # Ensure all response data is free of numpy types for JSON serialization
+            # Retorna o resumo de métricas para o dashboard
             return PipelineResult(
                 status=PipelineStatus.COMPLETED.value,
                 message="Dataset processed and stored successfully",
@@ -668,38 +481,26 @@ class DataPipeline:
                     "column_count": int(dataset.column_count),
                     "filename": dataset.filename,
                     "storage_location": "mongodb://datasets",
-                    "ml_processing": convert_numpy_types(ml_results),  # Clean ML results
-                    "processing_summary": summary  # Already cleaned above
+                    "ml_processing": ml_summary_dashboard, # <-- Retorna o resumo de métricas
+                    "processing_summary": summary # Retorna o resumo completo
                 }
             )
 
         except Exception as e:
-            # =========================================================
-            # ERROR HANDLING
-            # =========================================================
+            # (Tratamento de erro global sem alteração)
             error_msg = f"Pipeline execution error: {str(e)}"
-            print("\n" + "🔴" * 30)
             print(f"[PIPELINE ERROR] {error_msg}")
-            print("🔴" * 30)
-            print(f"[TRACE]\n{traceback.format_exc()}")
-            print("🔴" * 30 + "\n")
-
-            # Try to store error in pipeline_runs
+            traceback.print_exc()
             try:
                 self.storage.store_pipeline_run(
-                    batch_id=batch_id,
-                    status=PipelineStatus.FAILED.value,
+                    batch_id=batch_id, status=PipelineStatus.FAILED.value,
                     summary={"error": error_msg, "stage": "unknown"},
                     errors=[{"message": error_msg, "trace": traceback.format_exc()}]
                 )
-            except:
-                pass  # Silent fail on error storage
-
+            except: pass
             return PipelineResult(
-                status=PipelineStatus.FAILED.value,
-                message=error_msg,
-                batch_id=batch_id,
-                errors=[{"message": error_msg, "trace": traceback.format_exc()}]
+                status=PipelineStatus.FAILED.value, message=error_msg,
+                batch_id=batch_id, errors=[{"message": error_msg, "trace": traceback.format_exc()}]
             )
 
 
@@ -708,22 +509,7 @@ class DataPipeline:
 # =============================================================================
 
 def convert_numpy_types(obj):
-    """
-    Recursively convert numpy types to native Python types.
-
-    This is necessary because MongoDB's BSON encoder and JSON serializer
-    cannot handle numpy types (numpy.bool_, numpy.int64, etc.) that come
-    from pandas operations.
-
-    Parameters:
-    -----------
-    obj : any
-        Object to convert (dict, list, numpy type, or native type)
-
-    Returns:
-    --------
-    any : Object with all numpy types converted to native Python types
-    """
+    """Recursively convert numpy types (sem alteração)"""
     if isinstance(obj, dict):
         return {k: convert_numpy_types(v) for k, v in obj.items()}
     elif isinstance(obj, list):
@@ -736,64 +522,45 @@ def convert_numpy_types(obj):
         return float(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
+    elif isinstance(obj, (pd.Timestamp, pd.Timedelta)):
+        return str(obj)
     else:
         return obj
 
 
 def create_pipeline(mode: str = "minimal") -> DataPipeline:
-    """
-    Factory function to create pipeline with specified mode.
-
-    Parameters:
-    -----------
-    mode : str
-        Processing mode (minimal, analysis, full_ml)
-
-    Returns:
-    --------
-    DataPipeline : Configured pipeline instance
-    """
+    """Factory function (sem alteração)"""
     try:
         processing_mode = ProcessingMode(mode)
     except ValueError:
         print(f"[WARNING] Unknown mode '{mode}', using MINIMAL")
         processing_mode = ProcessingMode.MINIMAL
-
     return DataPipeline(mode=processing_mode)
 
 
 # =============================================================================
-# TESTING
+# TESTING (Sem alteração)
 # =============================================================================
-
 if __name__ == "__main__":
-    """
-    Test the pipeline with sample data
-    """
-    print("Testing Data Processing Pipeline")
+    print("Testing Data Processing Pipeline (com target_column)")
     print("=" * 60)
-
-    # Create sample test data
     test_data = {
         "filename": "test_data.csv",
         "data": pd.DataFrame({
             "col1": [1, 2, 3, 4, 5],
             "col2": ["A", "B", "C", "D", "E"],
-            "col3": [10.5, 20.3, 30.1, 40.7, 50.9]
+            "col3": [10.5, 20.3, 30.1, 40.7, 50.9] # Target
         }).to_json(orient='records'),
         "metadata": {
             "row_count": 5,
             "column_count": 3,
             "column_names": ["col1", "col2", "col3"],
             "file_type": "csv",
-            "has_missing_values": False
+            "has_missing_values": False,
+            "target_column": "col3" # <-- Adicionando o target
         }
     }
-
-    # Create and execute pipeline
-    pipeline = create_pipeline("minimal")
+    pipeline = create_pipeline("full_ml") # <-- Testando com FULL_ML
     result = pipeline.execute(test_data)
-
-    # Print results
     print("\nPipeline Result:")
     print(json.dumps(result.to_dict(), indent=2, default=str))

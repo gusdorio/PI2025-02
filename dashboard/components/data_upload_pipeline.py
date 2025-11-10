@@ -229,35 +229,15 @@ class DataTransformer:
         }
 
 
-# =============================================================================
-# DATA SERIALIZER
-# =============================================================================
-
 class DataSerializer:
     """
     Handles data serialization for ML service communication.
-
-    Includes numpy type conversion (moved from ml_client.py) and
-    payload preparation with transformation metadata.
+    (O restante da classe permanece o mesmo)
     """
 
     @staticmethod
     def convert_numpy_types(obj: Any) -> Any:
-        """
-        Recursively convert numpy types to native Python types.
-
-        This is necessary for JSON serialization as numpy types
-        (numpy.bool_, numpy.int64, etc.) are not JSON serializable.
-
-        Parameters:
-        -----------
-        obj : any
-            Object to convert (dict, list, numpy type, or native type)
-
-        Returns:
-        --------
-        any : Object with all numpy types converted to native Python types
-        """
+        # ... (este método permanece o mesmo) ...
         if isinstance(obj, dict):
             return {k: DataSerializer.convert_numpy_types(v) for k, v in obj.items()}
         elif isinstance(obj, list):
@@ -273,12 +253,12 @@ class DataSerializer:
         else:
             return obj
 
-    def serialize(self, dataset: UploadedDataset, transform_metadata: Dict) -> Dict:
+    def serialize(self, dataset: UploadedDataset, transform_metadata: Dict, target_column: str) -> Dict:
         """
         Serialize dataset for ML service transmission.
 
         Creates a JSON-serializable payload including dataset data,
-        metadata, and transformation information.
+        metadata, transformation information, and the target column.
 
         Parameters:
         -----------
@@ -286,6 +266,8 @@ class DataSerializer:
             Dataset to serialize
         transform_metadata : dict
             Metadata about any transformations applied
+        target_column : str
+            The column to be used as the prediction target
 
         Returns:
         --------
@@ -294,17 +276,21 @@ class DataSerializer:
         # Get dataset summary and clean numpy types
         metadata = self.convert_numpy_types(dataset.get_summary())
 
+        # *** ADICIONA A COLUNA ALVO AOS METADADOS ***
+        metadata['target_column'] = target_column
+
         # Prepare payload
         payload = {
             "filename": dataset.filename,
             "data": dataset.raw_dataframe.to_json(orient='records'),
-            "metadata": metadata,
+            "metadata": metadata,  # Metadados agora contêm a target_column
             "transform_info": transform_metadata  # Include transformation metadata
         }
 
         return payload
 
 
+# =_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_
 # =============================================================================
 # ML SERVICE CLIENT
 # =============================================================================
@@ -312,29 +298,18 @@ class DataSerializer:
 class MLServiceClient:
     """
     Handles communication with the ML model service.
-
-    Configurable client for sending datasets to the ML service,
-    with proper error handling and response processing.
+    (O restante da classe permanece o mesmo)
     """
 
     def __init__(self,
                  endpoint: str = 'http://ml-model:5000/process',
                  timeout: int = 60):
-        """
-        Initialize ML service client.
-
-        Parameters:
-        -----------
-        endpoint : str
-            ML service endpoint URL
-        timeout : int
-            Request timeout in seconds
-        """
+        # ... (init permanece o mesmo) ...
         self.endpoint = endpoint
         self.timeout = timeout
         self.serializer = DataSerializer()
 
-    def send_dataset(self, dataset: UploadedDataset, transform_metadata: Dict) -> Optional[Dict]:
+    def send_dataset(self, dataset: UploadedDataset, transform_metadata: Dict, target_column: str) -> Optional[Dict]:
         """
         Send dataset to ML service for processing.
 
@@ -344,6 +319,8 @@ class MLServiceClient:
             Dataset to send
         transform_metadata : dict
             Metadata about transformations applied
+        target_column : str
+            The column selected as target
 
         Returns:
         --------
@@ -351,8 +328,8 @@ class MLServiceClient:
         None : If request fails
         """
         try:
-            # Serialize dataset
-            payload = self.serializer.serialize(dataset, transform_metadata)
+            # Serialize dataset, agora passando a target_column
+            payload = self.serializer.serialize(dataset, transform_metadata, target_column)
 
             # Calculate payload size for logging
             try:
@@ -360,7 +337,8 @@ class MLServiceClient:
                 print(f"[ML CLIENT] Payload size: {payload_size_kb:.2f} KB")
             except:
                 pass
-
+            
+            print(f"[ML CLIENT] Target Column: {target_column}")
             print(f"[ML CLIENT] Sending to {self.endpoint}")
             print(f"[ML CLIENT] Timeout: {self.timeout} seconds")
 
@@ -382,26 +360,24 @@ class MLServiceClient:
             return result
 
         except requests.ConnectionError as e:
+            # ... (blocos de exceção permanecem os mesmos) ...
             print(f"[ML CLIENT ERROR] Connection failed: {str(e)}")
             return None
-
         except requests.Timeout:
             print(f"[ML CLIENT ERROR] Request timeout after {self.timeout}s")
             return None
-
         except requests.HTTPError as e:
             print(f"[ML CLIENT ERROR] HTTP {e.response.status_code}: {str(e)}")
             return None
-
         except json.JSONDecodeError as e:
             print(f"[ML CLIENT ERROR] Invalid JSON response: {str(e)}")
             return None
-
         except Exception as e:
             print(f"[ML CLIENT ERROR] Unexpected error: {str(e)}")
             return None
 
 
+# =_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_
 # =============================================================================
 # DATA UPLOAD PIPELINE (MAIN ORCHESTRATOR)
 # =============================================================================
@@ -409,32 +385,14 @@ class MLServiceClient:
 class DataUploadPipeline:
     """
     Main orchestrator for the data upload workflow.
-
-    Implements a stage-based pipeline pattern similar to ml_model's DataPipeline,
-    orchestrating the flow from file validation through ML service communication.
-
-    Pipeline stages:
-    1. File Validation and Reading (via existing uploader.py)
-    2. Data Transformation (currently skipped, ready for trasformator.py)
-    3. ML Service Communication
+    (O restante da classe permanece o mesmo)
     """
 
     def __init__(self,
                  transform_mode: TransformMode = TransformMode.NONE,
                  ml_endpoint: Optional[str] = None,
                  ml_timeout: Optional[int] = None):
-        """
-        Initialize upload pipeline with configuration.
-
-        Parameters:
-        -----------
-        transform_mode : TransformMode
-            Transformation mode for data preprocessing
-        ml_endpoint : str, optional
-            ML service endpoint (defaults to ml-model:5000)
-        ml_timeout : int, optional
-            ML request timeout (defaults to 60 seconds)
-        """
+        # ... (init permanece o mesmo) ...
         self.transform_mode = transform_mode
         self.transformer = DataTransformer(mode=transform_mode)
         self.ml_client = MLServiceClient(
@@ -442,51 +400,35 @@ class DataUploadPipeline:
             timeout=ml_timeout or 60
         )
 
-    def execute(self, uploaded_file, upload_service) -> UploadPipelineResult:
+    def execute(self, dataset: UploadedDataset, target_column: str) -> UploadPipelineResult:
         """
-        Execute the complete upload pipeline.
-
-        Orchestrates the multi-stage process with proper error handling
-        and status tracking at each stage.
+        Execute the processing and sending stages of the pipeline.
+        
+        NOTE: Stage 1 (Validation/Reading) is now done *before* calling this.
 
         Parameters:
         -----------
-        uploaded_file : UploadedFile
-            Streamlit uploaded file object
-        upload_service : UploadService
-            Service for file validation and reading
+        dataset : UploadedDataset
+            The validated UploadedDataset object
+        target_column : str
+            The column selected as target for ML processing
 
         Returns:
         --------
         UploadPipelineResult : Standardized result object
         """
         print("\n" + "=" * 60)
-        print("[UPLOAD PIPELINE] Starting execution")
+        print("[UPLOAD PIPELINE] Starting execution (Stages 2 & 3)")
         print(f"[UPLOAD PIPELINE] Transform mode: {self.transform_mode.value}")
+        print(f"[UPLOAD PIPELINE] Target Column: {target_column}")
         print("=" * 60)
 
         try:
             # =========================================================
-            # STAGE 1: FILE VALIDATION AND READING
+            # STAGE 1: FILE VALIDATION AND READING (REMOVIDO)
+            # Esta etapa agora acontece em 'upload.py'
             # =========================================================
-            print("\n[STAGE 1] File Validation and Reading")
-            print("-" * 40)
-
-            # Use existing upload service for validation and reading
-            dataset, errors = upload_service.process_upload(uploaded_file)
-
-            if errors:
-                print(f"[VALIDATION] Failed with {len(errors)} error(s)")
-                for error in errors:
-                    print(f"[VALIDATION] - {error}")
-
-                return UploadPipelineResult(
-                    status=PipelineStatus.FAILED.value,
-                    message="File validation failed",
-                    errors=errors
-                )
-
-            print(f"[VALIDATION] Success")
+            print(f"[VALIDATION] Skipped (already done in UI)")
             print(f"[VALIDATION] Dataset: {dataset.row_count} rows × {dataset.column_count} columns")
 
             # =========================================================
@@ -512,9 +454,15 @@ class DataUploadPipeline:
             print("-" * 40)
 
             print("[ML CLIENT] Preparing to send dataset")
-            ml_response = self.ml_client.send_dataset(transformed_dataset, transform_metadata)
+            # Passa a target_column para o cliente
+            ml_response = self.ml_client.send_dataset(
+                transformed_dataset, 
+                transform_metadata, 
+                target_column
+            )
 
             if not ml_response:
+                # ... (bloco de falha permanece o mesmo) ...
                 print("[ML CLIENT] ❌ Communication failed")
                 return UploadPipelineResult(
                     status=PipelineStatus.FAILED.value,
@@ -525,12 +473,10 @@ class DataUploadPipeline:
                 )
 
             print(f"[ML CLIENT] ✅ Response received")
+            # ... (restante do método 'execute' permanece o mesmo) ...
             print(f"[ML CLIENT] Status: {ml_response.get('status')}")
             print(f"[ML CLIENT] Message: {ml_response.get('message')}")
 
-            # =========================================================
-            # SUCCESS RESPONSE
-            # =========================================================
             print("\n" + "=" * 60)
             print("[UPLOAD PIPELINE] ✅ EXECUTION COMPLETED SUCCESSFULLY")
             print("=" * 60 + "\n")
@@ -549,9 +495,7 @@ class DataUploadPipeline:
             )
 
         except Exception as e:
-            # =========================================================
-            # ERROR HANDLING
-            # =========================================================
+            # ... (bloco de exceção permanece o mesmo) ...
             error_msg = f"Pipeline execution error: {str(e)}"
             print("\n" + "🔴" * 30)
             print(f"[PIPELINE ERROR] {error_msg}")
