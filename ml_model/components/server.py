@@ -142,11 +142,11 @@ class MLHandler(BaseHTTPRequestHandler):
         dict : Pipeline execution results
         """
         try:
-            # Initialize pipeline with minimal mode (no ML processing for now)
-            pipeline = DataPipeline(mode=ProcessingMode.MINIMAL)
+            # Initialize pipeline with FULL ML mode
+            pipeline = DataPipeline(mode=ProcessingMode.FULL_ML)
 
             # Execute pipeline and get results
-            print("[SERVER] Delegating to DataPipeline...")
+            print("[SERVER] Delegating to DataPipeline (Mode: FULL_ML)...")
             result = pipeline.execute(data)
 
             # Convert PipelineResult to dictionary for HTTP response
