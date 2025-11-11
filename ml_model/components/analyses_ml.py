@@ -163,7 +163,6 @@ class AutoMLSelector:
             error_range_test = self._calculate_error_range(self.y_test, y_pred_test)
             
             return {
-                'model': model,
                 # Métricas de Validação Cruzada (principal)
                 'cv_rmse': cv_rmse,
                 'cv_rmse_std': cv_rmse_std,
@@ -249,7 +248,6 @@ class AutoMLSelector:
                 }
             
             return {
-                'model': model,
                 # Métricas de Validação Cruzada (principal)
                 'cv_accuracy': cv_accuracy,
                 'cv_accuracy_std': cv_accuracy_std,
