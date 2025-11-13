@@ -18,6 +18,9 @@ import pandas as pd
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Predictions import
+from components.ml_client import request_prediction
+
 from config import get_database_connection, check_database_health
 
 
@@ -121,16 +124,14 @@ def show_dataset_details(db_conn, dataset_doc, pipeline_run_doc=None):
         st.caption(f"Batch ID: {batch_id}")
 
     # Create tabs for different views
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🤖 ML Results",
+        "🧪 Predictions",
         "📊 Original Data",
         "📈 Visualizations",
         "ℹ️ Metadata"
     ])
-
-    # =========================================================
-    # TAB 1: ML RESULTS (AGORA É A PRIMEIRA TAB)
-    # =========================================================
+    
     with tab1:
         st.subheader("Machine Learning Results")
 
@@ -210,11 +211,109 @@ def show_dataset_details(db_conn, dataset_doc, pipeline_run_doc=None):
                 st.warning(f"⚠️ ML Status: {ml_status}")
         else:
             st.info("📤 Dataset uploaded but not yet processed through ML pipeline")
-
     # =========================================================
-    # TAB 2: ORIGINAL DATA (Sem alteração)
+    # TAB 2: ORIGINAL DATA 
     # =========================================================
     with tab2:
+        st.subheader("🧪 Testar Modelo (Previsão em tempo real)")
+        
+        # Verifica se o ML foi completado antes de mostrar o formulário
+        if pipeline_run_doc and pipeline_run_doc.get('summary', {}).get('ml_status') == 'completed':
+            summary = pipeline_run_doc.get('summary', {})
+            ml_summary = summary.get('ml_summary_dashboard', {})
+            
+            st.markdown("""
+            **Nota:** Para problemas de **Regressão**, esta ferramenta prevê um *único valor* com base nas features de entrada. 
+            Para prever *sequências futuras* (como séries temporais), seria necessária uma arquitetura de modelo diferente (ex: ARIMA, LSTM) 
+            que não está no `AutoMLSelector` atual.
+            """)
+
+            try:
+                target_col = summary.get('target_column')
+                all_cols = dataset_doc['metadata']['column_names']
+                data_types = dataset_doc['metadata']['data_types']
+                # Pega todos os dados originais para obter os tipos corretos
+                original_df = pd.DataFrame(dataset_doc.get('data', []))
+                
+                features = [col for col in all_cols if col != target_col]
+
+                if not features or original_df.empty:
+                    st.error("Não foi possível determinar as features ou carregar dados originais para a previsão.")
+                else:
+                    with st.form(key="prediction_form"):
+                        st.markdown("Insira os valores para uma nova amostra:")
+                        
+                        input_sample = {}
+                        cols_per_row = 3
+                        form_cols = st.columns(cols_per_row)
+                        
+                        # Cria um input para cada feature
+                        for i, feature in enumerate(features):
+                            col_index = i % cols_per_row
+                            
+                            with form_cols[col_index]:
+                                # Se a coluna original for numérica
+                                if pd.api.types.is_numeric_dtype(original_df[feature]):
+                                    input_sample[feature] = st.number_input(
+                                        label=f"{feature} (Numérico)", 
+                                        value=float(original_df[feature].mean()), # Usa a média como default
+                                        format="%.2f"
+                                    )
+                                # Se a coluna original for categórica/objeto
+                                else:
+                                    # Pega opções únicas se houver poucas, senão texto livre
+                                    unique_vals = original_df[feature].unique()
+                                    if len(unique_vals) < 20:
+                                        input_sample[feature] = st.selectbox(
+                                            label=f"{feature} (Categórico)",
+                                            options=unique_vals,
+                                            index=0
+                                        )
+                                    else:
+                                        input_sample[feature] = st.text_input(
+                                            label=f"{feature} (Texto)",
+                                            value=original_df[feature].mode()[0] # Usa a moda como default
+                                        )
+                        
+                        submitted = st.form_submit_button("Fazer Previsão")
+
+                    if submitted:
+                        with st.spinner("Enviando para o modelo..."):
+                            # Chama a função do ml_client
+                            prediction_result = request_prediction(batch_id, input_sample)
+                            
+                            if prediction_result:
+                                st.success("Previsão recebida!")
+                                
+                                # Exibe os resultados
+                                if 'prediction' in prediction_result:
+                                    pred_val = prediction_result['prediction']
+                                    
+                                    if ml_summary.get('problem_type') == 'regression':
+                                        st.metric(f"Previsão de '{target_col}'", f"{pred_val:,.2f}")
+                                    else:
+                                        st.metric(f"Previsão de '{target_col}'", str(pred_val))
+                                
+                                if 'probabilities' in prediction_result:
+                                    st.subheader("Probabilidades (Classificação)")
+                                    prob_df = pd.DataFrame.from_dict(
+                                        prediction_result['probabilities'], 
+                                        orient='index', 
+                                        columns=['Probabilidade']
+                                    )
+                                    st.dataframe(prob_df, use_container_width=True)
+                            else:
+                                st.error("Falha ao obter previsão do serviço de ML.")
+
+            except Exception as e:
+                st.error(f"Erro ao construir formulário de previsão: {e}")
+                st.code(traceback.format_exc())
+        else:
+            st.info("O processamento de ML deve ser concluído com sucesso para habilitar a previsão.")
+    # =========================================================
+    # TAB 3: ORIGINAL DATA 
+    # =========================================================
+    with tab3:
         st.subheader("Original Dataset")
         data_list = dataset_doc.get('data', [])
         if data_list:
@@ -224,9 +323,9 @@ def show_dataset_details(db_conn, dataset_doc, pipeline_run_doc=None):
             st.warning("No data found")
 
     # =========================================================
-    # TAB 3: VISUALIZATIONS (Sem alteração)
+    # TAB 4: VISUALIZATIONS
     # =========================================================
-    with tab3:
+    with tab4:
         st.subheader("Data Visualizations")
         data_list = dataset_doc.get('data', [])
         if data_list:
@@ -246,9 +345,9 @@ def show_dataset_details(db_conn, dataset_doc, pipeline_run_doc=None):
             st.warning("No data for visualization")
 
     # =========================================================
-    # TAB 4: METADATA (Sem alteração)
+    # TAB 5: METADATA
     # =========================================================
-    with tab4:
+    with tab5:
         st.subheader("Dataset Metadata")
         metadata = dataset_doc.get('metadata', {})
         st.json(metadata)
