@@ -15,6 +15,9 @@ import json
 from datetime import datetime
 import traceback
 
+# Predictions import
+from ml_model.components import predictor
+
 # Import data processing pipeline
 from ml_model.components.data_processor import DataPipeline, ProcessingMode, PipelineResult
 
@@ -23,64 +26,69 @@ class MLHandler(BaseHTTPRequestHandler):
     """Request handler for ML processing endpoints."""
 
     def do_POST(self):
-        """Handle POST requests to /process endpoint."""
-        if self.path == '/process':
-            print("\n" + "🔵" * 30)
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 📥 NEW REQUEST RECEIVED")
-            print("🔵" * 30)
+        """Handle POST requests to /process and /predict endpoints."""
+        
+        try:
+            # Read request body
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length == 0:
+                self._send_error(400, "Empty request body")
+                return
 
+            post_data = self.rfile.read(content_length)
+
+            # Parse JSON data
             try:
-                # Read request body
-                content_length = int(self.headers.get('Content-Length', 0))
-                print(f"[INFO] Content-Length: {content_length:,} bytes ({content_length/1024:.2f} KB)")
+                data = json.loads(post_data.decode('utf-8'))
+            except json.JSONDecodeError as e:
+                self._send_error(400, f"Invalid JSON: {str(e)}")
+                return
 
-                if content_length == 0:
-                    print("[ERROR] Empty request body detected")
-                    self._send_error(400, "Empty request body")
-                    return
-
-                print(f"[INFO] Reading {content_length:,} bytes from request body...")
-                post_data = self.rfile.read(content_length)
-                print(f"[SUCCESS] Request body read successfully")
-
-                # Parse JSON data
-                try:
-                    print("[INFO] Parsing JSON data...")
-                    data = json.loads(post_data.decode('utf-8'))
-                    print(f"[SUCCESS] JSON parsed successfully")
-                except json.JSONDecodeError as e:
-                    print(f"[ERROR] JSON parsing failed: {str(e)}")
-                    self._send_error(400, f"Invalid JSON: {str(e)}")
-                    return
-
-                # Log received data
+            if self.path == '/process':
+                print("\n" + "🔵" * 30)
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 📥 NEW REQUEST RECEIVED (/process)")
+                print("🔵" * 30)
+                
                 self._log_request(data)
-
-                # Delegate to pipeline for processing (includes validation, ML, storage)
                 print("[INFO] Delegating to DataPipeline...")
                 result = self._process_dataset(data)
-
-                # Send success response
+                
                 print("[INFO] Sending response to client...")
                 self._send_success(result)
                 print("[SUCCESS] Response sent successfully ✅")
-                print("🔵" * 30 + "\n")
 
-            except Exception as e:
-                # Handle unexpected errors
-                error_msg = f"Server error: {str(e)}"
-                print("\n" + "🔴" * 30)
-                print(f"[ERROR] UNEXPECTED ERROR OCCURRED")
-                print("🔴" * 30)
-                print(f"[ERROR] {error_msg}")
-                print("[ERROR] Full traceback:")
-                traceback.print_exc()
-                print("🔴" * 30 + "\n")
-                self._send_error(500, error_msg)
-        else:
-            # Endpoint not found
-            print(f"[WARNING] Unknown POST endpoint requested: {self.path}")
-            self._send_error(404, f"Endpoint not found: {self.path}")
+            elif self.path == '/predict':
+                print("\n" + "🟢" * 30)
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔬 NEW PREDICTION REQUEST (/predict)")
+                print("🟢" * 30)
+                
+                print(f"[INFO] Batch ID: {data.get('batch_id')}")
+                print(f"[INFO] Input Data: {data.get('input_data')}")
+
+                prediction_result = predictor.handle_prediction(
+                    data['batch_id'], 
+                    data['input_data']
+                )
+                
+                self._send_success(prediction_result)
+                print("[SUCCESS] Prediction sent successfully ✅")
+
+            else:
+                # Endpoint not found
+                print(f"[WARNING] Unknown POST endpoint requested: {self.path}")
+                self._send_error(404, f"Endpoint not found: {self.path}")
+
+        except Exception as e:
+            # Handle unexpected errors
+            error_msg = f"Server error: {str(e)}"
+            print("\n" + "🔴" * 30)
+            print(f"[ERROR] UNEXPECTED ERROR OCCURRED")
+            print("🔴" * 30)
+            print(f"[ERROR] {error_msg}")
+            print("[ERROR] Full traceback:")
+            traceback.print_exc()
+            print("🔴" * 30 + "\n")
+            self._send_error(500, error_msg)
 
     def do_GET(self):
         """Handle GET requests for health checks."""

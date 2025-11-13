@@ -36,6 +36,26 @@ class AutoMLSelector:
     random_state : int, opcional
         Seed para reprodutibilidade (padrão: 42(Razao da vida ao universokk)) 
     """
+
+    REGRESSION_MODELS = {
+        'Linear Regression': LinearRegression,
+        'Ridge Regression': Ridge,
+        'Lasso Regression': Lasso,
+        'Random Forest Regressor': RandomForestRegressor,
+        'Gradient Boosting Regressor': GradientBoostingRegressor,
+        'SVR': SVR,
+        'Decision Tree Regressor': DecisionTreeRegressor,
+        'KNN Regressor': KNeighborsRegressor
+    }
+    
+    CLASSIFICATION_MODELS = {
+        'Logistic Regression': LogisticRegression,
+        'Random Forest Classifier': RandomForestClassifier,
+        'Gradient Boosting Classifier': GradientBoostingClassifier,
+        'SVC': SVC,
+        'Decision Tree Classifier': DecisionTreeClassifier,
+        'KNN Classifier': KNeighborsClassifier
+    }
     
     def __init__(self, target_column, objective='auto', cv_folds=5, test_size=0.2, random_state=42):
         self.target_column = target_column
@@ -55,27 +75,26 @@ class AutoMLSelector:
         self.X = None
         self.y = None
         
-        # Modelos de regressão
+        # Instancia modelos
         self.regression_models = {
-            'Linear Regression': LinearRegression(),
-            'Ridge Regression': Ridge(random_state=random_state),
-            'Lasso Regression': Lasso(random_state=random_state),
-            'Random Forest Regressor': RandomForestRegressor(n_estimators=100, random_state=random_state),
-            'Gradient Boosting Regressor': GradientBoostingRegressor(n_estimators=100, random_state=random_state),
-            'SVR': SVR(),
-            'Decision Tree Regressor': DecisionTreeRegressor(random_state=random_state),
-            'KNN Regressor': KNeighborsRegressor()
+            name: model_class(random_state=random_state) if 'random_state' in model_class().get_params() else model_class()
+            for name, model_class in self.REGRESSION_MODELS.items()
         }
         
-        # Modelos de classificação
+        # Ajustes específicos para modelos que precisam
+        self.regression_models['Random Forest Regressor'].set_params(n_estimators=100)
+        self.regression_models['Gradient Boosting Regressor'].set_params(n_estimators=100)
+
         self.classification_models = {
-            'Logistic Regression': LogisticRegression(max_iter=1000, random_state=random_state),
-            'Random Forest Classifier': RandomForestClassifier(n_estimators=100, random_state=random_state),
-            'Gradient Boosting Classifier': GradientBoostingClassifier(n_estimators=100, random_state=random_state),
-            'SVC': SVC(probability=True, random_state=random_state),
-            'Decision Tree Classifier': DecisionTreeClassifier(random_state=random_state),
-            'KNN Classifier': KNeighborsClassifier()
+            name: model_class(random_state=random_state) if 'random_state' in model_class().get_params() else model_class()
+            for name, model_class in self.CLASSIFICATION_MODELS.items()
         }
+        
+        # Ajustes específicos para modelos que precisam
+        self.classification_models['Logistic Regression'].set_params(max_iter=1000)
+        self.classification_models['Random Forest Classifier'].set_params(n_estimators=100)
+        self.classification_models['Gradient Boosting Classifier'].set_params(n_estimators=100)
+        self.classification_models['SVC'].set_params(probability=True)
     
     def _detect_problem_type(self, y):
         """
@@ -163,7 +182,6 @@ class AutoMLSelector:
             error_range_test = self._calculate_error_range(self.y_test, y_pred_test)
             
             return {
-                'model': model,
                 # Métricas de Validação Cruzada (principal)
                 'cv_rmse': cv_rmse,
                 'cv_rmse_std': cv_rmse_std,
@@ -249,7 +267,6 @@ class AutoMLSelector:
                 }
             
             return {
-                'model': model,
                 # Métricas de Validação Cruzada (principal)
                 'cv_accuracy': cv_accuracy,
                 'cv_accuracy_std': cv_accuracy_std,
@@ -320,7 +337,7 @@ class AutoMLSelector:
                 
                 if result['score'] > best_score:
                     best_score = result['score']
-                    self.best_model = result['model']
+                    #self.best_model = result['model']
                     self.best_model_name = model_name
         
         print("\n" + "=" * 60)

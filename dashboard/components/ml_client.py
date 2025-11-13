@@ -56,3 +56,48 @@ def send_dataset_to_ml_service(payload: Dict) -> Optional[Dict]:
     except Exception as e:
         print(f"[ML CLIENT ERROR] Unexpected error: {str(e)}")
         return None
+    
+def request_prediction(batch_id: str, input_data: Dict) -> Optional[Dict]:
+    """
+    Envia uma nova amostra para o serviço de ML para previsão on-demand.
+
+    Parameters:
+    -----------
+    batch_id : str
+        O ID do batch (modelo) a ser usado para a previsão.
+    input_data : dict
+        Um dicionário de {feature_name: value} para a nova amostra.
+
+    Returns:
+    --------
+    dict : Resultado da previsão
+    None : Se a requisição falhar
+    """
+    try:
+        payload = {
+            "batch_id": batch_id,
+            "input_data": input_data
+        }
+        
+        response = requests.post(
+            'http://ml-model:5000/predict', # <-- NOVO ENDPOINT
+            json=payload,
+            timeout=30, # Previsões devem ser rápidas
+            headers={'Content-Type': 'application/json'}
+        )
+
+        response.raise_for_status()
+        return response.json()
+
+    except requests.ConnectionError as e:
+        print(f"[ML CLIENT ERROR] Prediction connection failed: {str(e)}")
+        return None
+    except requests.Timeout:
+        print(f"[ML CLIENT ERROR] Prediction request timeout after 30s")
+        return None
+    except requests.HTTPError as e:
+        print(f"[ML CLIENT ERROR] Prediction HTTP {e.response.status_code}: {str(e)}")
+        return None
+    except Exception as e:
+        print(f"[ML CLIENT ERROR] Prediction unexpected error: {str(e)}")
+        return None
