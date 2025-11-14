@@ -101,3 +101,55 @@ def request_prediction(batch_id: str, input_data: Dict) -> Optional[Dict]:
     except Exception as e:
         print(f"[ML CLIENT ERROR] Prediction unexpected error: {str(e)}")
         return None
+    
+def request_batch_prediction(batch_id: str, batch_data_json: str, mode: str, target_column_name: Optional[str]) -> Optional[Dict]:
+    """
+    Envia um DataFrame JSON para o serviço de ML para previsão em lote.
+
+    Parameters:
+    -----------
+    batch_id : str
+        O ID do modelo (batch) a ser usado.
+    batch_data_json : str
+        O DataFrame (com features e/ou labels) serializado como JSON.
+    mode : str
+        'testar' (se o JSON contém a coluna alvo) ou 'prever' (se não contém).
+    target_column_name : str, optional
+        O nome da coluna alvo (necessário se mode='testar').
+
+    Returns:
+    --------
+    dict : Dicionário com 'predictions' e (opcionalmente) 'metrics'.
+    None : Se a requisição falhar.
+    """
+    try:
+        payload = {
+            "batch_id": batch_id,
+            "batch_data_json": batch_data_json,
+            "mode": mode,
+            "target_column_name": target_column_name
+        }
+        
+        # Usar um timeout maior para previsões em lote
+        response = requests.post(
+            'http://ml-model:5000/batch_predict', # <-- NOVO ENDPOINT
+            json=payload,
+            timeout=300, # 5 minutos para lotes maiores
+            headers={'Content-Type': 'application/json'}
+        )
+
+        response.raise_for_status()
+        return response.json()
+
+    except requests.ConnectionError as e:
+        print(f"[ML CLIENT ERROR] Batch prediction connection failed: {str(e)}")
+        return None
+    except requests.Timeout:
+        print(f"[ML CLIENT ERROR] Batch prediction request timeout after 300s")
+        return None
+    except requests.HTTPError as e:
+        print(f"[ML CLIENT ERROR] Batch prediction HTTP {e.response.status_code}: {str(e)}")
+        return None
+    except Exception as e:
+        print(f"[ML CLIENT ERROR] Batch prediction unexpected error: {str(e)}")
+        return None

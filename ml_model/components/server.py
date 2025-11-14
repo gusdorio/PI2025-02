@@ -72,6 +72,26 @@ class MLHandler(BaseHTTPRequestHandler):
                 
                 self._send_success(prediction_result)
                 print("[SUCCESS] Prediction sent successfully ✅")
+                
+            elif self.path == '/batch_predict':
+                print("\n" + "📦" * 30)
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚚 NEW BATCH PREDICTION REQUEST (/batch_predict)")
+                print("📦" * 30)
+                
+                print(f"[INFO] Batch ID: {data.get('batch_id')}")
+                print(f"[INFO] Mode: {data.get('mode')}")
+                print(f"[INFO] Target Column: {data.get('target_column_name')}")
+
+                # Delega para a nova função no predictor
+                batch_result = predictor.handle_batch_prediction(
+                    data['batch_id'],
+                    data['batch_data_json'],
+                    data['mode'],
+                    data.get('target_column_name')
+                )
+                
+                self._send_success(batch_result)
+                print("[SUCCESS] Batch prediction sent successfully ✅")
 
             else:
                 # Endpoint not found

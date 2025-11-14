@@ -19,7 +19,7 @@ import pandas as pd
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Predictions import
-from components.ml_client import request_prediction
+from components.ml_client import request_prediction, request_batch_prediction
 
 from config import get_database_connection, check_database_health
 
@@ -308,6 +308,109 @@ def show_dataset_details(db_conn, dataset_doc, pipeline_run_doc=None):
             except Exception as e:
                 st.error(f"Erro ao construir formulário de previsão: {e}")
                 st.code(traceback.format_exc())
+        
+        st.markdown("---")
+        st.subheader("🧪 Testar Modelo com um Arquivo (Previsão em Lote)")
+        
+        # Só mostra se o modelo foi treinado
+        if pipeline_run_doc and pipeline_run_doc.get('summary', {}).get('ml_status') == 'completed':
+            
+            # 1. Seleção de Modo
+            batch_mode = st.radio(
+                "Qual o seu objetivo com o arquivo?",
+                ("Testar (meu arquivo tem a coluna alvo)", "Prever (meu arquivo só tem features)"),
+                key=f"batch_mode_{batch_id}"
+            )
+            mode = "testar" if "Testar" in batch_mode else "prever"
+
+            # 2. Upload do Arquivo
+            uploaded_batch_file = st.file_uploader(
+                "Carregue seu arquivo .csv para previsão em lote",
+                type=['csv'],
+                key=f"batch_uploader_{batch_id}"
+            )
+            
+            if uploaded_batch_file is not None:
+                try:
+                    df_batch = pd.read_csv(uploaded_batch_file)
+                    st.dataframe(df_batch.head(), use_container_width=True)
+                    
+                    target_batch_col = None
+                    
+                    # 3. Se Modo "Testar", pedir a coluna alvo
+                    if mode == "testar":
+                        target_batch_col = st.selectbox(
+                            "Selecione a coluna alvo (rótulo) *deste novo arquivo*",
+                            options=["-"] + list(df_batch.columns),
+                            index=0,
+                            key=f"batch_target_{batch_id}"
+                        )
+
+                    # 4. Botão de Processamento
+                    if st.button("Processar Lote", key=f"batch_process_{batch_id}"):
+                        if mode == "testar" and target_batch_col == "-":
+                            st.error("Por favor, selecione a coluna alvo para 'Testar'.")
+                        else:
+                            with st.spinner("Processando lote... Isso pode levar alguns minutos."):
+                                batch_json = df_batch.to_json(orient='records')
+                                
+                                # Chama a nova função do client
+                                batch_result = request_batch_prediction(
+                                    batch_id,
+                                    batch_json,
+                                    mode,
+                                    target_batch_col
+                                )
+                                
+                                if batch_result:
+                                    st.success("Lote processado com sucesso!")
+                                    st.session_state[f"batch_result_{batch_id}"] = (batch_result, df_batch)
+                                else:
+                                    st.error("Falha ao processar o lote.")
+
+                    # 5. Exibir Resultados e Download
+                    if f"batch_result_{batch_id}" in st.session_state:
+                        batch_result, df_original = st.session_state[f"batch_result_{batch_id}"]
+                        predictions = batch_result.get('predictions', [])
+                        
+                        st.subheader("Resultados do Lote")
+                        
+                        # Se modo "Testar", mostrar métricas
+                        if "metrics" in batch_result:
+                            st.markdown("#### Métricas de Teste")
+                            metrics = batch_result['metrics']
+                            if "accuracy" in metrics:
+                                st.metric(
+                                    label="Acurácia no novo arquivo",
+                                    value=f"{metrics['accuracy'] * 100:.2f}%",
+                                    help=f"{metrics['correct']} acertos de {metrics['total']} amostras."
+                                )
+                            if "r2_score" in metrics:
+                                st.metric(label="R² Score no novo arquivo", value=f"{metrics['r2_score']:.4f}")
+                                st.metric(label="RMSE no novo arquivo", value=f"{metrics['rmse']:.4f}")
+
+                        # Preparar DataFrame para Download
+                        if mode == "testar":
+                            # Apenas predições
+                            df_download = pd.DataFrame(predictions, columns=["prediction"])
+                        else:
+                            # Dados originais + predições
+                            df_download = df_original.copy()
+                            df_download["prediction"] = predictions
+                        
+                        st.dataframe(df_download.head(), use_container_width=True)
+                        
+                        # Botão de Download
+                        csv_data = df_download.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="Download das Predições (.csv)",
+                            data=csv_data,
+                            file_name=f"predictions_{batch_id}.csv",
+                            mime="text/csv",
+                        )
+
+                except Exception as e:
+                    st.error(f"Erro ao ler ou processar o arquivo CSV: {e}")
         else:
             st.info("O processamento de ML deve ser concluído com sucesso para habilitar a previsão.")
     # =========================================================
