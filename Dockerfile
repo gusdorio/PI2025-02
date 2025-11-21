@@ -22,6 +22,16 @@
 
 FROM python:3.11-slim AS base
 
+# Build-time arguments for version tracking
+ARG VERSION_TAG="unknown"
+ARG GIT_COMMIT="unknown"
+ARG BUILD_TIMESTAMP="unknown"
+
+# Set as environment variables so they're available at runtime
+ENV IMAGE_VERSION=${VERSION_TAG} \
+    IMAGE_COMMIT=${GIT_COMMIT} \
+    IMAGE_BUILD_TIME=${BUILD_TIMESTAMP}
+
 # Copy uv package manager from official image (ultra-fast Python package installer)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 

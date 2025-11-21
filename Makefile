@@ -22,6 +22,7 @@ RESET  := \033[0m
 # Docker Compose files
 DEV_COMPOSE  := docker-compose.dev.yml
 PROD_COMPOSE := docker-compose.prod.yml
+VERSION_SCRIPT := ./scripts/version.sh
 
 
 # ============================================================================
@@ -50,20 +51,82 @@ help: ## Show this help message
 # ============================================================================
 
 dev-build: ## Build development images (with cache)
-	@echo "$(BLUE)Building development images...$(RESET)"
-	docker-compose -f $(DEV_COMPOSE) build
+	@echo "$(BLUE)Building development images with version tags...$(RESET)"
+	@export $$($(VERSION_SCRIPT) | grep -v "^$$"); \
+	docker build \
+		--target ml-model \
+		--build-arg VERSION_TAG=$${VERSION_TAG} \
+		--build-arg GIT_COMMIT=$${GIT_COMMIT} \
+		--build-arg BUILD_TIMESTAMP=$${BUILD_TIMESTAMP} \
+		--build-arg ENVIRONMENT=development \
+		-t pi2025-02/ml-model:$${VERSION_TAG}-dev \
+		-t pi2025-02/ml-model:dev-latest \
+		-t pi2025-02/ml-model:commit-$${GIT_COMMIT} \
+		.; \
+	docker build \
+		--target dashboard \
+		--build-arg VERSION_TAG=$${VERSION_TAG} \
+		--build-arg GIT_COMMIT=$${GIT_COMMIT} \
+		--build-arg BUILD_TIMESTAMP=$${BUILD_TIMESTAMP} \
+		--build-arg ENVIRONMENT=development \
+		-t pi2025-02/dashboard:$${VERSION_TAG}-dev \
+		-t pi2025-02/dashboard:dev-latest \
+		-t pi2025-02/dashboard:commit-$${GIT_COMMIT} \
+		.
 
 dev-build-nc: ## Build development images (no cache)
-	@echo "$(BLUE)Building development images from scratch...$(RESET)"
-	docker-compose -f $(DEV_COMPOSE) build --no-cache
+	@echo "$(BLUE)Building development images with version tags...$(RESET)"
+	@export $$($(VERSION_SCRIPT) | grep -v "^$$"); \
+	docker build \
+		--target ml-model \
+		--build-arg VERSION_TAG=$${VERSION_TAG} \
+		--build-arg GIT_COMMIT=$${GIT_COMMIT} \
+		--build-arg BUILD_TIMESTAMP=$${BUILD_TIMESTAMP} \
+		--build-arg ENVIRONMENT=development \
+		-t pi2025-02/ml-model:$${VERSION_TAG}-dev \
+		-t pi2025-02/ml-model:dev-latest \
+		-t pi2025-02/ml-model:commit-$${GIT_COMMIT} \
+		.; \
+	docker build \
+		--target dashboard \
+		--build-arg VERSION_TAG=$${VERSION_TAG} \
+		--build-arg GIT_COMMIT=$${GIT_COMMIT} \
+		--build-arg BUILD_TIMESTAMP=$${BUILD_TIMESTAMP} \
+		--build-arg ENVIRONMENT=development \
+		-t pi2025-02/dashboard:$${VERSION_TAG}-dev \
+		-t pi2025-02/dashboard:dev-latest \
+		-t pi2025-02/dashboard:commit-$${GIT_COMMIT} \
+		--no-cache \
+		.
 
 dev-up: ## Start development environment
 	@echo "$(GREEN)Starting development environment...$(RESET)"
 	docker-compose -f $(DEV_COMPOSE) up
 
 dev-up-build: ## Build and start development environment
-	@echo "$(GREEN)Building and starting development environment...$(RESET)"
-	docker-compose -f $(DEV_COMPOSE) up --build
+	@echo "$(BLUE)Building development images with version tags...$(RESET)"
+	@export $$($(VERSION_SCRIPT) | grep -v "^$$"); \
+    docker build \
+        --target ml-model \
+        --build-arg VERSION_TAG=$${VERSION_TAG} \
+        --build-arg GIT_COMMIT=$${GIT_COMMIT} \
+        --build-arg BUILD_TIMESTAMP=$${BUILD_TIMESTAMP} \
+        --build-arg ENVIRONMENT=development \
+        -t pi2025-02/ml-model:$${VERSION_TAG} \
+        -t pi2025-02/ml-model:latest \
+        -t pi2025-02/ml-model:commit-$${GIT_COMMIT} \
+        .; \
+    docker build \
+        --target dashboard \
+        --build-arg VERSION_TAG=$${VERSION_TAG} \
+        --build-arg GIT_COMMIT=$${GIT_COMMIT} \
+        --build-arg BUILD_TIMESTAMP=$${BUILD_TIMESTAMP} \
+        --build-arg ENVIRONMENT=development \
+        -t pi2025-02/dashboard:$${VERSION_TAG} \
+        -t pi2025-02/dashboard:latest \
+		-t pi2025-02/dashboard:commit-$${GIT_COMMIT} \
+        .; \
+    docker-compose -f $(DEV_COMPOSE) up -d
 
 dev-up-d: ## Start development environment (detached)
 	@echo "$(GREEN)Starting development environment in background...$(RESET)"
@@ -108,20 +171,82 @@ dev-shell-db: ## Open MongoDB shell
 # ============================================================================
 
 prod-build: ## Build production images (with cache)
-	@echo "$(BLUE)Building production images...$(RESET)"
-	docker-compose -f $(PROD_COMPOSE) build
+	@echo "$(BLUE)Building production images with version tags...$(RESET)"
+	@export $$($(VERSION_SCRIPT) | grep -v "^$$"); \
+	docker build \
+		--target ml-model \
+		--build-arg VERSION_TAG=$${VERSION_TAG} \
+		--build-arg GIT_COMMIT=$${GIT_COMMIT} \
+		--build-arg BUILD_TIMESTAMP=$${BUILD_TIMESTAMP} \
+		--build-arg ENVIRONMENT=production \
+		-t pi2025-02/ml-model:$${VERSION_TAG} \
+		-t pi2025-02/ml-model:latest \
+		-t pi2025-02/ml-model:commit-$${GIT_COMMIT} \
+		.; \
+	docker build \
+		--target dashboard \
+		--build-arg VERSION_TAG=$${VERSION_TAG} \
+		--build-arg GIT_COMMIT=$${GIT_COMMIT} \
+		--build-arg BUILD_TIMESTAMP=$${BUILD_TIMESTAMP} \
+		--build-arg ENVIRONMENT=production \
+		-t pi2025-02/dashboard:$${VERSION_TAG} \
+		-t pi2025-02/dashboard:latest \
+		-t pi2025-02/dashboard:commit-$${GIT_COMMIT} \
+		.
 
 prod-build-nc: ## Build production images (no cache)
-	@echo "$(BLUE)Building production images from scratch...$(RESET)"
-	docker-compose -f $(PROD_COMPOSE) build --no-cache
+	@echo "$(BLUE)Building production images with version tags...$(RESET)"
+	@export $$($(VERSION_SCRIPT) | grep -v "^$$"); \
+	docker build \
+		--target ml-model \
+		--build-arg VERSION_TAG=$${VERSION_TAG} \
+		--build-arg GIT_COMMIT=$${GIT_COMMIT} \
+		--build-arg BUILD_TIMESTAMP=$${BUILD_TIMESTAMP} \
+		--build-arg ENVIRONMENT=production \
+		-t pi2025-02/ml-model:$${VERSION_TAG} \
+		-t pi2025-02/ml-model:latest \
+		-t pi2025-02/ml-model:commit-$${GIT_COMMIT} \
+		.; \
+	docker build \
+		--target dashboard \
+		--build-arg VERSION_TAG=$${VERSION_TAG} \
+		--build-arg GIT_COMMIT=$${GIT_COMMIT} \
+		--build-arg BUILD_TIMESTAMP=$${BUILD_TIMESTAMP} \
+		--build-arg ENVIRONMENT=production \
+		-t pi2025-02/dashboard:$${VERSION_TAG} \
+		-t pi2025-02/dashboard:latest \
+		-t pi2025-02/dashboard:commit-$${GIT_COMMIT} \
+		--no-cache \
+		.
 
 prod-up: ## Start production environment (detached)
 	@echo "$(GREEN)Starting production environment...$(RESET)"
 	docker-compose -f $(PROD_COMPOSE) up -d
 
 prod-up-build: ## Build and start production environment
-	@echo "$(GREEN)Building and starting production environment...$(RESET)"
-	docker-compose -f $(PROD_COMPOSE) up -d --build
+	@echo "$(BLUE)Building production images with version tags...$(RESET)"
+	@export $$($(VERSION_SCRIPT) | grep -v "^$$"); \
+    docker build \
+        --target ml-model \
+        --build-arg VERSION_TAG=$${VERSION_TAG} \
+        --build-arg GIT_COMMIT=$${GIT_COMMIT} \
+        --build-arg BUILD_TIMESTAMP=$${BUILD_TIMESTAMP} \
+        --build-arg ENVIRONMENT=production \
+        -t pi2025-02/ml-model:$${VERSION_TAG} \
+        -t pi2025-02/ml-model:latest \
+        -t pi2025-02/ml-model:commit-$${GIT_COMMIT} \
+        .; \
+    docker build \
+        --target dashboard \
+        --build-arg VERSION_TAG=$${VERSION_TAG} \
+        --build-arg GIT_COMMIT=$${GIT_COMMIT} \
+        --build-arg BUILD_TIMESTAMP=$${BUILD_TIMESTAMP} \
+        --build-arg ENVIRONMENT=production \
+        -t pi2025-02/dashboard:$${VERSION_TAG} \
+        -t pi2025-02/dashboard:latest \
+        -t pi2025-02/dashboard:commit-$${GIT_COMMIT} \
+        .; \
+    docker-compose -f $(PROD_COMPOSE) up -d
 
 prod-down: ## Stop production environment
 	@echo "$(YELLOW)Stopping production environment...$(RESET)"

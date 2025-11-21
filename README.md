@@ -52,3 +52,22 @@ flowchart TD
     style H fill:#ffe1f5
     style K fill:#e1f5ff
 ```
+
+## CI/CD Pipeline
+
+The project is designed to run into an end-to-end workflow, syncing with cloud enviroment. To do it, we pass from stages where we initially make our tests locally (using containers), then, through Git Actions implementation, we sync changes with Microsoft Azure Ecossystem.
+
+### Makefile
+We have build our strategy of local deployment on the top of the `Makefile`. To understand how to use it, you can just use this command:
+
+```bash
+make help
+```
+
+### Image Builds
+When building the images via `make`, we use a tag-labeling strategy related to `scripts/version.sh`.
+In order to make it usable, is necessary to make the script executable before starting to use `make` directives:
+
+```bash
+chmod +x version.sh
+```
