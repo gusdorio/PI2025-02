@@ -2,40 +2,52 @@
 
 This document consolidates all Azure CLI commands used for the PI2025-02 cloud data systems project deployment.
 
-## Basic Informations Retrieve
+## Quick Reference
 
 ```bash
 az account list --output table
 ```
 
-## Environment Variables Setup
+## Creation of Service Principal (for GitHub Actions)
+GitHub Actions needs to authenticate to two Azure services:
 
-Define these variables before running any commands:
+GitHub Actions → Azure Container Registry (to push images) → Azure Container Apps (to deploy)
+
+### Step 1: Create Service Principal for GitHub Actions
 
 ```bash
-# Azure Global Configurations
-RESOURCE_GROUP=PI2025-02
-LOCATION=eastus2
-ENVIRONMENT_NAME=pi2502-env
+# Create SP with Contributor role scoped to your resource group
+az ad sp create-for-rbac \
+  --name "github-actions-pi2025" \
+  --role contributor \
+  --scopes /subscriptions/${AZ_SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP} \
+  --sdk-auth
 
-# Azure Container Registry
-ACR_NAME=<your-acr-name>
-ACR_LOGIN_SERVER=${ACR_NAME}.azurecr.io
-ACR_USERNAME=<acr-username>
-ACR_PASSWORD=<acr-password>
-
-# Azure CosmosDB
-COSMOSDB_ACCOUNT=pi2025
-COSMOSDB_HOST=${COSMOSDB_ACCOUNT}.mongo.cosmos.azure.com
-COSMOSDB_PORT=10255
-COSMOSDB_USER=${COSMOSDB_ACCOUNT}
-COSMOSDB_PASSWORD=<cosmosdb-primary-key>
-COSMOSDB_DATABASE=pi2502
-
-# Azure Container Apps (populated after deployment)
-ML_MODEL_URL=$(az containerapp show --name ml-model --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" --output tsv)
-DASHBOARD_URL=$(az containerapp show --name dashboard --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" --output tsv)
+# Assign AcrPush role to the service principal
+az role assignment create \
+  --assignee ${AZ_SP_ID} \
+  --role AcrPush \
+  --scope $ACR_ID
 ```
+
+### Step 2: Configure GitHub Secrets
+
+In your repository: **Settings → Secrets and variables → Actions**
+
+Add the following secrets:
+
+| Secret Name | Value | Description |
+|-------------|-------|-------------|
+| `AZURE_CREDENTIALS` | Full JSON output from `az ad sp create-for-rbac --sdk-auth` | Service Principal authentication for GitHub Actions |
+| `ACR_LOGIN_SERVER` | `<your-acr>.azurecr.io` | Azure Container Registry login server |
+| `ACR_USERNAME` | Service Principal App ID | ACR authentication username |
+| `ACR_PASSWORD` | Service Principal password | ACR authentication password |
+| `COSMOSDB_PASSWORD` | Your CosmosDB primary key | MongoDB connection authentication |
+
+
+## Environment Variables Setup
+
+Ensure to set the basic variables at .env before proceeding
 
 ---
 

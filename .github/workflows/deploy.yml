@@ -1,0 +1,113 @@
+name: Build and Deploy to Azure Container Apps
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dashboard/**'
+      - 'ml_model/**'
+      - 'models/**'
+      - 'Dockerfile'
+      - 'requirements.txt'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'dashboard/**'
+      - 'ml_model/**'
+      - 'models/**'
+      - 'Dockerfile'
+      - 'requirements.txt'
+  workflow_dispatch:  # Manual trigger
+  
+
+env:
+  RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+  ACR_NAME: ${{ vars.ACR_NAME }}
+  ENVIRONMENT_NAME: ${{ vars.ENVIRONMENT_NAME }}
+  
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.version.outputs.tag }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Generate version tag
+        id: version
+        run: |
+          # Use your existing versioning logic
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
+          TAG="v${TIMESTAMP}-${SHORT_SHA}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "Generated tag: ${TAG}"
+      
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Login to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
+      
+      - name: Build and push ML-Model image
+        run: |
+          docker build \
+            --target ml-model \
+            --build-arg VERSION_TAG=${{ steps.version.outputs.tag }} \
+            --build-arg GIT_COMMIT=${{ github.sha }} \
+            --build-arg BUILD_TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S") \
+            -t ${{ env.ACR_NAME }}.azurecr.io/pi2025-02/ml-model:${{ steps.version.outputs.tag }} \
+            -t ${{ env.ACR_NAME }}.azurecr.io/pi2025-02/ml-model:latest \
+            .
+          docker push ${{ env.ACR_NAME }}.azurecr.io/pi2025-02/ml-model:${{ steps.version.outputs.tag }}
+          docker push ${{ env.ACR_NAME }}.azurecr.io/pi2025-02/ml-model:latest
+      
+      - name: Build and push Dashboard image
+        run: |
+          docker build \
+            --target dashboard \
+            --build-arg VERSION_TAG=${{ steps.version.outputs.tag }} \
+            --build-arg GIT_COMMIT=${{ github.sha }} \
+            --build-arg BUILD_TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S") \
+            -t ${{ env.ACR_NAME }}.azurecr.io/pi2025-02/dashboard:${{ steps.version.outputs.tag }} \
+            -t ${{ env.ACR_NAME }}.azurecr.io/pi2025-02/dashboard:latest \
+            .
+          docker push ${{ env.ACR_NAME }}.azurecr.io/pi2025-02/dashboard:${{ steps.version.outputs.tag }}
+          docker push ${{ env.ACR_NAME }}.azurecr.io/pi2025-02/dashboard:latest
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only deploy on push to main, not on PRs
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Deploy ML-Model to Container Apps
+        run: |
+          az containerapp update \
+            --name ml-model \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.ACR_NAME }}.azurecr.io/pi2025-02/ml-model:${{ needs.build.outputs.image_tag }}
+      
+      - name: Deploy Dashboard to Container Apps
+        run: |
+          az containerapp update \
+            --name dashboard \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.ACR_NAME }}.azurecr.io/pi2025-02/dashboard:${{ needs.build.outputs.image_tag }}
+      
+      - name: Verify deployments
+        run: |
+          echo "ML-Model status:"
+          az containerapp show --name ml-model --resource-group ${{ env.RESOURCE_GROUP }} --query "properties.runningStatus"
+          echo "Dashboard status:"
+          az containerapp show --name dashboard --resource-group ${{ env.RESOURCE_GROUP }} --query "properties.runningStatus"
