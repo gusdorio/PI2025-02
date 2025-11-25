@@ -20,6 +20,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from components.uploader import UploadService
 from components.data_upload_pipeline import DataUploadPipeline, TransformMode
+from theme import apply_theme
 
 ML_SERVICE_BASE = os.getenv('ML_SERVICE_URL', 'http://ml-model:5000')
 
@@ -32,6 +33,12 @@ st.set_page_config(
     page_icon="⬆️",
     layout="wide"
 )
+
+# ============================================================================
+# STYLING
+# ============================================================================
+
+apply_theme()
 
 # ============================================================================
 # SIDEBAR - ML SERVICE STATUS

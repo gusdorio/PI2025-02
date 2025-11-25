@@ -22,6 +22,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from components.ml_client import request_prediction, request_batch_prediction
 
 from config import get_database_connection, check_database_health
+from theme import apply_theme
 
 
 # ============================================================================
@@ -34,6 +35,11 @@ st.set_page_config(
     layout="wide"
 )
 
+# ============================================================================
+# STYLING
+# ============================================================================
+
+apply_theme()
 
 # ============================================================================
 # HELPER FUNCTIONS

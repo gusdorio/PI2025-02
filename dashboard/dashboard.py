@@ -14,6 +14,7 @@ from config import (
     get_db_config_info,
     DashboardConfig
 )
+from theme import apply_theme
 
 
 # ============================================================================
@@ -32,31 +33,7 @@ st.set_page_config(
 # STYLING
 # ============================================================================
 
-st.markdown("""
-    <style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1f77b4;
-        margin-bottom: 1rem;
-    }
-    .status-box {
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 1rem 0;
-    }
-    .status-success {
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        color: #155724;
-    }
-    .status-error {
-        background-color: #f8d7da;
-        border: 1px solid #f5c6cb;
-        color: #721c24;
-    }
-    </style>
-""", unsafe_allow_html=True)
+apply_theme()
 
 
 # ============================================================================
@@ -97,6 +74,7 @@ st.subheader("System Status")
 col1, col2, col3 = st.columns(3)
 
 with col1:
+    st.markdown('<span class="status-indicator"></span>', unsafe_allow_html=True)
     st.metric(
         label="Dashboard Status",
         value="Online",
