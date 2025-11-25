@@ -20,8 +20,7 @@ GitHub Actions → Azure Container Registry (to push images) → Azure Container
 az ad sp create-for-rbac \
   --name "github-actions-pi2025" \
   --role contributor \
-  --scopes /subscriptions/${AZ_SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP} \
-  --sdk-auth
+  --scopes /subscriptions/${AZ_SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}
 
 # Assign AcrPush role to the service principal
 az role assignment create \
@@ -43,6 +42,9 @@ Add the following secrets:
 | `ACR_USERNAME` | Service Principal App ID | ACR authentication username |
 | `ACR_PASSWORD` | Service Principal password | ACR authentication password |
 | `COSMOSDB_PASSWORD` | Your CosmosDB primary key | MongoDB connection authentication |
+
+For `AZURE_CREDENTIALS` the final string must be:
+{"clientId": "<client_id>", "clientSecret": "<client_secret>", "subscriptionId": "<subscription_id>", "tenantId": "<tenant_id>"}
 
 
 ## Environment Variables Setup
