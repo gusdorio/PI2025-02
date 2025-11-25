@@ -514,8 +514,17 @@ else:
         query = {}
         # (Lógica de filtros de tempo sem alteração)
         
-        sort_direction = -1 if sort_order == "Newest First" else 1
-        datasets = list(datasets_collection.find(query).sort('upload_timestamp', sort_direction).limit(50))
+        # Fetch without sort (CosmosDB requires index for ORDER BY)
+        # Sort in Python instead to avoid index requirement
+        datasets = list(datasets_collection.find(query).limit(200))
+
+        # Sort in Python by upload_timestamp
+        reverse_sort = sort_order == "Newest First"
+        datasets = sorted(
+            datasets,
+            key=lambda x: x.get('upload_timestamp') or x.get('created_at') or '',
+            reverse=reverse_sort
+        )[:50]
 
         if datasets:
             all_runs = list(pipeline_runs_collection.find())

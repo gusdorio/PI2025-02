@@ -22,7 +22,10 @@ class DatabaseConfig:
     """
     Database configuration from environment variables
     """
-    # MongoDB Configuration
+    # Check for full connection string first (CosmosDB)
+    MONGO_URI = os.getenv('MONGO_URI', None)
+    
+    # MongoDB Configuration (fallback for local dev)
     MONGO_HOST = os.getenv('MONGO_HOST', 'localhost')
     MONGO_PORT = int(os.getenv('MONGO_PORT', 27017))
     MONGO_DATABASE = os.getenv('MONGO_DATABASE', 'pi2502')
@@ -32,6 +35,11 @@ class DatabaseConfig:
     # TLS/SSL Configuration (for Azure CosmosDB)
     MONGO_TLS = os.getenv('MONGO_TLS', 'false').lower() == 'true'
     MONGO_AUTH_SOURCE = os.getenv('MONGO_AUTH_SOURCE', 'admin')
+    
+    # Connection timeout settings
+    CONNECT_TIMEOUT_MS = int(os.getenv('MONGO_CONNECT_TIMEOUT', 30000))
+    SOCKET_TIMEOUT_MS = int(os.getenv('MONGO_SOCKET_TIMEOUT', 30000))
+    SERVER_SELECTION_TIMEOUT_MS = int(os.getenv('MONGO_SERVER_TIMEOUT', 30000))
 
     # Connection Pool Settings
     POOL_SIZE = int(os.getenv('DB_POOL_SIZE', 5))
@@ -40,16 +48,28 @@ class DatabaseConfig:
 
     @classmethod
     def get_mongo_url(cls) -> str:
-        """Generate standard MongoDB connection URL"""
+        """Generate MongoDB connection URL - use MONGO_URI if available"""
+        # If full connection string is provided, use it directly
+        if cls.MONGO_URI:
+            # Append database name if not in the URI
+            if f"/{cls.MONGO_DATABASE}" not in cls.MONGO_URI:
+                # Insert database name before query parameters
+                if "?" in cls.MONGO_URI:
+                    base, params = cls.MONGO_URI.split("?", 1)
+                    return f"{base.rstrip('/')}/{cls.MONGO_DATABASE}?{params}"
+                else:
+                    return f"{cls.MONGO_URI.rstrip('/')}/{cls.MONGO_DATABASE}"
+            return cls.MONGO_URI
+            
+        # Fallback to building URL from components
         if cls.MONGO_USER and cls.MONGO_PASSWORD:
-            # Include authSource parameter for proper authentication
             return f"mongodb://{cls.MONGO_USER}:{cls.MONGO_PASSWORD}@{cls.MONGO_HOST}:{cls.MONGO_PORT}/{cls.MONGO_DATABASE}?authSource={cls.MONGO_AUTH_SOURCE}"
         return f"mongodb://{cls.MONGO_HOST}:{cls.MONGO_PORT}/{cls.MONGO_DATABASE}"
 
     @classmethod
     def is_cosmosdb(cls) -> bool:
         """Detect if configuration is for Azure CosmosDB"""
-        return cls.MONGO_TLS or 'cosmos.azure.com' in cls.MONGO_HOST
+        return cls.MONGO_URI is not None or cls.MONGO_TLS or 'cosmos.azure.com' in cls.MONGO_HOST
 
 
 class MongoDBConnection:
@@ -63,22 +83,35 @@ class MongoDBConnection:
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialize()
+            instance = super().__new__(cls)
+            try:
+                instance._initialize()
+                cls._instance = instance  # Only set after successful initialization
+            except Exception as e:
+                logger.error(f"Failed to create {cls.__name__} instance: {e}")
+                raise
         return cls._instance
 
     def _initialize(self):
         """Initialize MongoDB connection"""
         try:
+            connection_url = DatabaseConfig.get_mongo_url()
+            
+            # Log connection attempt (without password)
+            safe_url = connection_url.split('@')[-1] if '@' in connection_url else connection_url
+            logger.info(f"Attempting MongoDB connection to: {safe_url}")
+            
             # Create PyMongo client
             self._client = MongoClient(
-                DatabaseConfig.get_mongo_url(),
+                connection_url,
                 maxPoolSize=DatabaseConfig.POOL_SIZE,
-                serverSelectionTimeoutMS=5000
+                serverSelectionTimeoutMS=DatabaseConfig.SERVER_SELECTION_TIMEOUT_MS,
+                connectTimeoutMS=DatabaseConfig.CONNECT_TIMEOUT_MS,
+                socketTimeoutMS=DatabaseConfig.SOCKET_TIMEOUT_MS
             )
             self._db = self._client[DatabaseConfig.MONGO_DATABASE]
 
-            logger.info("MongoDB connection initialized successfully")
+            logger.info(f"MongoDB connection initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize MongoDB connection: {e}")
             raise
@@ -130,19 +163,26 @@ class AzureCosmosDBConnection(MongoDBConnection):
         if not DatabaseConfig.MONGO_USER or not DatabaseConfig.MONGO_PASSWORD:
             raise ValueError("CosmosDB requires MONGO_USER and MONGO_PASSWORD")
 
-        # Build base URL
-        url = f"mongodb://{DatabaseConfig.MONGO_USER}:{DatabaseConfig.MONGO_PASSWORD}@"
+        # Build base URL with proper URL encoding for password
+        from urllib.parse import quote_plus
+        
+        user = quote_plus(DatabaseConfig.MONGO_USER)
+        password = quote_plus(DatabaseConfig.MONGO_PASSWORD)
+        
+        url = f"mongodb://{user}:{password}@"
         url += f"{DatabaseConfig.MONGO_HOST}:{DatabaseConfig.MONGO_PORT}/{DatabaseConfig.MONGO_DATABASE}"
 
         # Add CosmosDB-specific query parameters
         params = [
-            "tls=true",
+            "ssl=true",
             "replicaSet=globaldb",  # CosmosDB global distribution
-            "retryWrites=false",    # CosmosDB doesn't support retryable writes
+            "retrywrites=false",    # CosmosDB doesn't support retryable writes
+            "maxIdleTimeMS=120000",  # Keep connections alive
             f"authSource={DatabaseConfig.MONGO_AUTH_SOURCE}"
         ]
 
         url += "?" + "&".join(params)
+        logger.info(f"CosmosDB connection URL generated for {DatabaseConfig.MONGO_HOST}")
         return url
 
     def _initialize(self):
@@ -151,9 +191,11 @@ class AzureCosmosDBConnection(MongoDBConnection):
             # CosmosDB-specific connection options
             connection_options = {
                 'maxPoolSize': DatabaseConfig.POOL_SIZE,
-                'serverSelectionTimeoutMS': 10000,  # CosmosDB may need more time
-                'tls': True,
-                'tlsAllowInvalidCertificates': False,
+                'serverSelectionTimeoutMS': DatabaseConfig.SERVER_SELECTION_TIMEOUT_MS,
+                'connectTimeoutMS': DatabaseConfig.CONNECT_TIMEOUT_MS,
+                'socketTimeoutMS': DatabaseConfig.SOCKET_TIMEOUT_MS,
+                'ssl': True,
+                'ssl_cert_reqs': 'CERT_REQUIRED',  # Changed from tlsAllowInvalidCertificates
                 'retryWrites': False,  # CosmosDB limitation
             }
 
@@ -167,17 +209,25 @@ class AzureCosmosDBConnection(MongoDBConnection):
             logger.info(f"Azure CosmosDB connection initialized successfully to {DatabaseConfig.MONGO_HOST}")
         except Exception as e:
             logger.error(f"Failed to initialize Azure CosmosDB connection: {e}")
+            logger.error(f"Connection details - Host: {DatabaseConfig.MONGO_HOST}, Port: {DatabaseConfig.MONGO_PORT}, DB: {DatabaseConfig.MONGO_DATABASE}")
             raise
 
 
 def get_database_connection() -> MongoDBConnection:
     """
     Factory function to get the appropriate database connection
-    Automatically selects between MongoDB and CosmosDB based on configuration
+    Uses MONGO_URI if available, otherwise detects CosmosDB from env vars
     """
+    # If using MONGO_URI (full connection string), use standard connection
+    if DatabaseConfig.MONGO_URI:
+        logger.info("Using MONGO_URI for database connection")
+        return MongoDBConnection()
+
+    # If CosmosDB detected via MONGO_TLS or hostname, use CosmosDB-specific connection
     if DatabaseConfig.is_cosmosdb():
         logger.info("Creating Azure CosmosDB connection")
         return AzureCosmosDBConnection()
-    else:
-        logger.info("Creating standard MongoDB connection")
-        return MongoDBConnection()
+
+    # Standard MongoDB connection
+    logger.info("Creating standard MongoDB connection")
+    return MongoDBConnection()

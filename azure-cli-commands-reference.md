@@ -391,6 +391,20 @@ az containerapp update \
     MONGO_PASSWORD=$COSMOSDB_PASSWORD
 ```
 
+### 4.4 Force Container Restarts
+
+```bash
+az containerapp revision restart \
+  --name dashboard \
+  --resource-group PI2025-02 \
+  --revision $(az containerapp revision list --name dashboard --resource-group PI2025-02 --query "[0].name" -o tsv)
+
+az containerapp revision restart \
+  --name ml-model \
+  --resource-group PI2025-02 \
+  --revision $(az containerapp revision list --name ml-model --resource-group PI2025-02 --query "[0].name" -o tsv)
+```
+
 ---
 
 ## Debugging & Monitoring
