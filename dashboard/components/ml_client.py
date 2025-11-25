@@ -11,7 +11,9 @@ data_upload_pipeline.py for proper separation of concerns.
 
 import requests
 from typing import Dict, Optional
+import os
 
+ML_SERVICE_BASE = os.getenv('ML_SERVICE_URL', 'http://ml-model:5000')
 
 def send_dataset_to_ml_service(payload: Dict) -> Optional[Dict]:
     """
@@ -32,7 +34,7 @@ def send_dataset_to_ml_service(payload: Dict) -> Optional[Dict]:
     """
     try:
         response = requests.post(
-            'http://ml-model:5000/process',
+            f'{ML_SERVICE_BASE}/process',
             json=payload,
             timeout=60,
             headers={'Content-Type': 'application/json'}
@@ -80,7 +82,7 @@ def request_prediction(batch_id: str, input_data: Dict) -> Optional[Dict]:
         }
         
         response = requests.post(
-            'http://ml-model:5000/predict', # <-- NOVO ENDPOINT
+            f'{ML_SERVICE_BASE}/predict',
             json=payload,
             timeout=30, # Previsões devem ser rápidas
             headers={'Content-Type': 'application/json'}
@@ -132,7 +134,7 @@ def request_batch_prediction(batch_id: str, batch_data_json: str, mode: str, tar
         
         # Usar um timeout maior para previsões em lote
         response = requests.post(
-            'http://ml-model:5000/batch_predict', # <-- NOVO ENDPOINT
+            f'{ML_SERVICE_BASE}/batch_predict',
             json=payload,
             timeout=300, # 5 minutos para lotes maiores
             headers={'Content-Type': 'application/json'}

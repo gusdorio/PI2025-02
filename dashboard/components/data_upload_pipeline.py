@@ -21,6 +21,9 @@ import requests
 from enum import Enum
 from typing import Dict, Optional, Tuple, Any
 from datetime import datetime
+import os
+
+ML_SERVICE_PROCESS = os.getenv('ML_SERVICE_URL', 'http://ml-model:5000') + '/process'
 
 # Import dataset model
 import sys
@@ -302,7 +305,7 @@ class MLServiceClient:
     """
 
     def __init__(self,
-                 endpoint: str = 'http://ml-model:5000/process',
+                 endpoint: str = ML_SERVICE_PROCESS,
                  timeout: int = 60):
         # ... (init permanece o mesmo) ...
         self.endpoint = endpoint
@@ -396,7 +399,7 @@ class DataUploadPipeline:
         self.transform_mode = transform_mode
         self.transformer = DataTransformer(mode=transform_mode)
         self.ml_client = MLServiceClient(
-            endpoint=ml_endpoint or 'http://ml-model:5000/process',
+            endpoint=ml_endpoint or ML_SERVICE_PROCESS,
             timeout=ml_timeout or 60
         )
 
