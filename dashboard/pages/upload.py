@@ -21,6 +21,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from components.uploader import UploadService
 from components.data_upload_pipeline import DataUploadPipeline, TransformMode
 
+ML_SERVICE_BASE = os.getenv('ML_SERVICE_URL', 'http://ml-model:5000')
 
 # ============================================================================
 # PAGE CONFIGURATION
@@ -38,11 +39,14 @@ st.set_page_config(
 
 with st.sidebar:
     st.markdown("### 🔧 Service Status")
-
+    
+    # Debug: Show current ML_SERVICE_BASE value
+    st.caption(f"**ML URL:** `{ML_SERVICE_BASE}`")
+    
     # Test ML service connection
     try:
         import requests
-        response = requests.get("http://ml-model:5000", timeout=2)
+        response = requests.get(ML_SERVICE_BASE, timeout=2)
         st.success("✅ ML Service: Online")
     except requests.ConnectionError:
         st.error("❌ ML Service: Offline")
@@ -66,7 +70,6 @@ def get_upload_service():
     """Initialize upload service with 50MB file size limit"""
     return UploadService(max_file_size_mb=50)
 
-@st.cache_resource
 def get_upload_pipeline():
     """Initialize upload pipeline with transformation disabled"""
     return DataUploadPipeline(transform_mode=TransformMode.NONE)
