@@ -55,19 +55,32 @@ flowchart TD
 
 ## CI/CD Pipeline
 
-The project is designed to run into an end-to-end workflow, syncing with cloud enviroment. To do it, we pass from stages where we initially make our tests locally (using containers), then, through Git Actions implementation, we sync changes with Microsoft Azure Ecossystem.
+The project follows a three-stage deployment workflow, progressing from local development to Azure production.
+
+### Environments
+
+| Environment | Database | Compose File | Image Tag | Purpose |
+|-------------|----------|--------------|-----------|---------|
+| **dev** | Local MongoDB | `docker-compose.dev.yml` | `:dev` | Fast local iteration |
+| **staging** | Azure CosmosDB | `docker-compose.staging.yml` | `:staging` | Pre-deployment validation |
+| **azure** | Azure CosmosDB | Container Apps | versioned | Production |
+
+Staging connects to the same CosmosDB as production, allowing validation of database behavior before deploying to Azure Container Apps.
 
 ### Makefile
-We have build our strategy of local deployment on the top of the `Makefile`. To understand how to use it, you can just use this command:
+Commands are organized by environment prefix (`dev-*`, `staging-*`, `azure-*`):
 
 ```bash
-make help
+make help           # Show all commands
+make dev-up         # Start dev environment
+make staging-up     # Start staging (requires CosmosDB credentials in .env)
+make azure-deploy   # Full Azure deployment
 ```
 
 ### Image Builds
-When building the images via `make`, we use a tag-labeling strategy related to `scripts/version.sh`.
-In order to make it usable, is necessary to make the script executable before starting to use `make` directives:
+Development and staging use simple tags (`:dev`, `:staging`). Azure builds use versioned tags via `scripts/version.sh` for ACR traceability.
 
 ```bash
-chmod +x version.sh
+chmod +x scripts/version.sh   # Make executable before first use
+chmod +x scripts/azure-preflisht.sh # To easily production setup ('make azure-' directives use it...)
 ```

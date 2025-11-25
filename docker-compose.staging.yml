@@ -1,17 +1,13 @@
-# Docker Compose Configuration for PRODUCTION (Azure Container Apps Ready)
-# Usage: docker-compose -f docker-compose.prod.yml up -d
+# Docker Compose Configuration for STAGING (CosmosDB, mirrors Azure)
+# Usage: docker-compose -f docker-compose.staging.yml up -d
 #
-# Azure Container Apps features:
-# - No volume mounts (self-contained images)
-# - Models folder baked into images during build
-# - External database (Azure CosmosDB via MongoDB API)
-# - No local MongoDB service (use managed CosmosDB)
-# - Optimized restart policies and health checks
-# - Each service will be deployed as separate Azure Container App
+# Staging environment features:
+# - No volume mounts (self-contained images like Azure)
+# - Connects to Azure CosmosDB (same as production)
+# - No local MongoDB service
+# - Used to validate behavior before Azure deployment
 #
-# NOTE: Azure Container Apps don't use docker-compose directly.
-# This file serves as a reference for local testing before Azure deployment.
-# For Azure deployment, use Azure CLI or Portal to create container apps.
+# This mirrors Azure Container Apps configuration for pre-deployment testing.
 
 services:
   # Machine Learning Model Service
@@ -20,16 +16,17 @@ services:
       context: .
       dockerfile: Dockerfile
       target: ml-model
-    container_name: ml-model-prod
-    # No volumes - fully self-contained image
+    image: pi2025-02/ml-model:staging
+    container_name: ml-model-staging
     networks:
-      - PI2502-network
+      - PI2502-network-staging
     restart: always
     environment:
       - PYTHONUNBUFFERED=1
-      - ENVIRONMENT=production
-      # Database configuration - Update these for Azure CosmosDB
-      # Format: <account-name>.mongo.cosmos.azure.com
+      - ENVIRONMENT=staging
+      # MongoDB Connection String (takes precedence)
+      - MONGO_URI=${MONGO_URI:-}
+      # Individual connection settings (fallback)
       - MONGO_HOST=${COSMOSDB_HOST:-localhost}
       - MONGO_PORT=${COSMOSDB_PORT:-10255}
       - MONGO_DATABASE=${COSMOSDB_DATABASE:-pi2502}
@@ -50,18 +47,19 @@ services:
       context: .
       dockerfile: Dockerfile
       target: dashboard
-    container_name: streamlit-dashboard-prod
+    image: pi2025-02/dashboard:staging
+    container_name: streamlit-dashboard-staging
     ports:
       - "8501:8501"
-    # No volumes - fully self-contained image
     networks:
-      - PI2502-network
+      - PI2502-network-staging
     restart: always
     environment:
       - PYTHONUNBUFFERED=1
-      - ENVIRONMENT=production
-      # Database configuration - Update these for Azure CosmosDB
-      # Format: <account-name>.mongo.cosmos.azure.com
+      - ENVIRONMENT=staging
+      # MongoDB Connection String (takes precedence)
+      - MONGO_URI=${MONGO_URI:-}
+      # Individual connection settings (fallback)
       - MONGO_HOST=${COSMOSDB_HOST:-localhost}
       - MONGO_PORT=${COSMOSDB_PORT:-10255}
       - MONGO_DATABASE=${COSMOSDB_DATABASE:-pi2502}
@@ -82,10 +80,9 @@ services:
         max-size: "10m"
         max-file: "3"
 
-# No volumes needed for Azure Container Apps
-# All data is stored in Azure CosmosDB
+# No volumes needed - uses Azure CosmosDB
 
 networks:
-  PI2502-network:
+  PI2502-network-staging:
     driver: bridge
-    name: PI2502-network-prod
+    name: PI2502-network-staging

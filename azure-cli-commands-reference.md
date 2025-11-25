@@ -2,6 +2,12 @@
 
 This document consolidates all Azure CLI commands used for the PI2025-02 cloud data systems project deployment.
 
+## Basic Informations Retrieve
+
+```bash
+az account list --output table
+```
+
 ## Environment Variables Setup
 
 Define these variables before running any commands:
